@@ -34,6 +34,8 @@ logger = logging.getLogger("taiwan_stock_scanner")
 REQUEST_TIMEOUT = 30
 REQUEST_DELAY_SECONDS = 0.2
 USER_AGENT = "Mozilla/5.0"
+RETRY_ATTEMPTS = 3  # 實測 TPEx 舊版端點偶爾會回傳暫時性 520，重試通常就會過
+RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增（1.5s, 3s），給對方伺服器喘息時間
 
 # 只保留 4 碼數字、不以 0 開頭的證券代號，排除 ETF／債券 ETF／權證。
 STOCK_ID_PATTERN = re.compile(r"^[1-9]\d{3}$")
@@ -72,19 +74,41 @@ def _clean_number(value) -> Optional[float]:
 
 
 def _get_json(url: str, params: dict) -> Optional[dict]:
-    """統一的 TPEx 請求函式。任何失敗都只記錄 log、回傳 None，不會讓呼叫端當機。"""
-    try:
-        resp = requests.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"[TPEx] 呼叫 {url} 發生連線錯誤：{e}")
-        return None
-    except ValueError as e:
-        logger.error(f"[TPEx] 解析 {url} 回傳的 JSON 失敗：{e}")
-        return None
-    finally:
-        time.sleep(REQUEST_DELAY_SECONDS)
+    """
+    統一的 TPEx 請求函式。任何失敗都只記錄 log、回傳 None，不會讓呼叫端當機。
+
+    實測掃描時 TPEx 舊版端點偶爾會回傳暫時性的 520（對方伺服器問題，不是我們
+    請求格式錯），這種通常隔幾秒重試就會過。5xx（伺服器端問題）會重試最多
+    RETRY_ATTEMPTS 次；4xx（我們請求本身有問題，例如參數錯）重試沒有意義，
+    直接放棄。逾時、連線中斷這類沒有明確狀態碼的錯誤也一併重試。
+    """
+    last_error: Optional[Exception] = None
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            resp = requests.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            status = e.response.status_code if e.response is not None else None
+            if status is not None and 400 <= status < 500:
+                logger.error(f"[TPEx] 呼叫 {url} 回傳 {status}（用戶端錯誤，不重試）：{e}")
+                break
+            logger.warning(f"[TPEx] 呼叫 {url} 發生 {status} 錯誤，第 {attempt}/{RETRY_ATTEMPTS} 次嘗試：{e}")
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            logger.warning(f"[TPEx] 呼叫 {url} 發生連線錯誤，第 {attempt}/{RETRY_ATTEMPTS} 次嘗試：{e}")
+        except ValueError as e:
+            logger.error(f"[TPEx] 解析 {url} 回傳的 JSON 失敗：{e}")
+            return None
+        finally:
+            time.sleep(REQUEST_DELAY_SECONDS)
+
+        if attempt < RETRY_ATTEMPTS:
+            time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+
+    logger.error(f"[TPEx] 呼叫 {url} 重試 {RETRY_ATTEMPTS} 次後仍失敗，放棄這筆：{last_error}")
+    return None
 
 
 # ======================================================================
