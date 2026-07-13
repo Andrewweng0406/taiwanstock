@@ -73,6 +73,13 @@ export function StockScreener({ results, loading, hasScanned }: StockScreenerPro
         </div>
       </div>
 
+      {!loading && hasScanned && filteredStocks.length > 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          💡 以下是符合三大條件規則篩出來的清單，不是「建議買進」名單。會不會漲、要不要買，
+          請自己再做功課判斷；「建議停損價」也只是規則算出來的參考數字，不是保證。
+        </p>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>

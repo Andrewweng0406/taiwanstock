@@ -89,7 +89,11 @@ export default function BacktestPage() {
 
         {!loading && hasRun && (
           <>
-            <h2 className="mb-4 text-2xl font-bold text-foreground">勝率統計</h2>
+            <h2 className="mb-2 text-2xl font-bold text-foreground">勝率統計</h2>
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+              💡 這是「過去」符合規則的股票，統計出來的歷史勝率，不是保證、也不是預測未來。
+              過去準不代表以後一定準，投資前請自己再判斷。
+            </p>
             <BacktestSummary summary={summary} holdingPeriods={holdingPeriods} />
 
             <h2 className="mb-4 mt-8 text-2xl font-bold text-foreground">
