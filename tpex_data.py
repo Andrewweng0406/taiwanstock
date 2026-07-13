@@ -37,7 +37,11 @@ REQUEST_DELAY_SECONDS = 0.2
 USER_AGENT = "Mozilla/5.0"
 RETRY_ATTEMPTS = 3  # 實測 TPEx 舊版端點偶爾會回傳暫時性 520，重試通常就會過
 RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增（1.5s, 3s），給對方伺服器喘息時間
-MAX_PARALLEL_REQUESTS = 8  # 抓歷史資料（逐日迴圈）時的平行執行緒數，理由跟 twse_data.py 相同
+# 2026-07-13：正式站實測發現 TPEx 這支端點掛在 Cloudflare 後面，8 條並發會被
+# 直接判定成異常流量、大量回傳連線逾時／520／522（TWSE 同樣 8 條並發完全沒事，
+# 問題只在 TPEx），逼得重試機制一直 backoff，反而把總時間從幾十秒拖到一百多秒，
+# 還一度整個請求逾時。調低到 3 條並發後才穩定又比序列快。
+MAX_PARALLEL_REQUESTS = 3
 
 # 只保留 4 碼數字、不以 0 開頭的證券代號，排除 ETF／債券 ETF／權證。
 STOCK_ID_PATTERN = re.compile(r"^[1-9]\d{3}$")
