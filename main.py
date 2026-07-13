@@ -512,22 +512,28 @@ def _save_scan_cache(scan_time: str, results: list) -> None:
 為什麼需要這一段？
 單純的「今天符不符合條件」的篩選器，沒辦法告訴你這套規則到底準不準——
 也就是完全不知道「勝率」。這裡做的事情是：把過去 BACKTEST_LOOKBACK_DAYS
-天內，WATCHLIST 每一檔股票「逐日」用跟 run_full_scan() 完全相同的三個條件
-去檢查，找出所有「訊號日」，然後模擬「訊號當天收盤買進、之後持有 N 個交易日
-再賣出」，統計這些訊號的勝率、平均報酬、最好/最差報酬。
+天內，WATCHLIST 每一檔股票「逐日」用跟 run_full_scan() 完全相同的四個條件
+（技術面 + 籌碼面 + 基本面 + 股本）去檢查，找出所有「訊號日」，然後模擬
+「訊號隔天開盤買進、之後持有 N 個交易日再賣出」，統計這些訊號的勝率、
+平均報酬、最好/最差報酬。
 
 【老實講在前面的限制，不要被數字誤導】
-1. 樣本數受限於 WATCHLIST 大小（目前 61 檔）與回測窗口（預設 365 天），
-   訊號數可能很少。看到「100% 勝率」很可能只是總共只出現 1、2 次訊號，
-   統計上完全不可靠，訊號數量（signal_count）比勝率本身更該優先看。
-2. 進場價簡化成「訊號當天收盤價」，沒有算手續費、滑價、證交稅，實際
-   交易成本一定會讓報酬比回測數字差一些。
+1. 樣本數受限於 WATCHLIST 大小（目前 61 檔，以大型權值股為主）與回測窗口，
+   訊號數可能很少，套用股本 < 40 億這個條件後更明顯（清單裡本來就沒有多少
+   小型股符合資格）。訊號數量（signal_count）比勝率本身更該優先看，看到
+   小樣本的漂亮數字（例如 20-30 筆就有很高的獲利因子）不要直接當結論。
+2. 進場價是「訊號隔天開盤價」，已經算進手續費（BACKTEST_FEE_RATE）、
+   賣出證交稅（BACKTEST_SELL_TAX_RATE）、單邊滑價（BACKTEST_SLIPPAGE_RATE），
+   不是零成本的樂觀版本，但實際成交價還是可能因為市場衝擊而更差。
 3. 沒有處理下市、減資、除權息造成的價格跳動，回測窗口越長，這類雜訊
    可能越明顯。
-4. 營收條件用 create_time（財報實際公佈日）而不是 date（月份代表日）當
-   生效日，避免用到「當時根本還沒公佈」的未來資訊（look-ahead bias）；
-   但如果 create_time 缺值，會退回用 date，準確度會差一點。
-這是第一版、方法論上算合理，但還不到能拿來真的下注的嚴謹程度，比較適合
+4. 營收、股本兩個條件都用「財報/資料實際公佈日」（而非資料代表的期別）
+   當生效日，避免用到「當時根本還沒公佈」的未來資訊（look-ahead bias）：
+   營收用 create_time；股本用資產負債表的期末日 + 60~90 天概估公佈延遲
+   （Q1-Q3 加 60 天、年報加 90 天），沒有精確到每家公司實際公告日。
+5. 同一檔股票連續多天都符合條件，只算第一天是一次訊號，避免同一波
+   行情被拆成好幾筆「獨立」交易，虛增樣本數跟高估勝率。
+這是方法論上算合理的版本，但還不到能拿來真的下注的嚴謹程度，比較適合
 拿來判斷「這套規則的方向對不對」，而不是精確的勝率數字。
 """
 BACKTEST_LOOKBACK_DAYS = 1825  # 預設五年，至少覆蓋不同多空階段，避免只看近一年
@@ -544,10 +550,16 @@ def _compute_backtest_signals_for_stock(
     price_df: pd.DataFrame,
     inst_df: pd.DataFrame,
     rev_df: pd.DataFrame,
+    balance_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
-    針對單一股票，把技術面/籌碼面/基本面三個條件在整段歷史上逐日算成布林值、
+    針對單一股票，把技術面/籌碼面/基本面/股本四個條件在整段歷史上逐日算成布林值、
     取交集，找出所有「訊號日」，並計算之後 N 個交易日的報酬率。
+
+    balance_df 是選填的（傳 None 或空表時，股本條件視為一律通過）——因為
+    這個函式也被 /api/backtest 以外的地方直接呼叫過（研究腳本），保留舊呼叫
+    方式不會壞掉，同時讓 /api/backtest 真的套用「股本 < CAPITAL_LIMIT」，
+    才會跟 /api/scan（即時掃描）測的是同一套四條件策略，而不是少一個條件。
 
     回傳欄位：stock_id / signal_date / entry_price / return_5 / return_10 / return_20
     （return_N 為 None 表示訊號日離今天太近，還沒走完那個持有期，不是計算錯誤）
@@ -626,7 +638,44 @@ def _compute_backtest_signals_for_stock(
             )
             price_df["revenue_signal"] = price_df["yoy_pass"].fillna(False)
 
-    raw_signal = price_df["tech_signal"] & price_df["inst_signal"] & price_df["revenue_signal"]
+    # ---- 股本訊號（股本 < CAPITAL_LIMIT，用財報公佈延遲當生效日避免用到未來資料）----
+    # FinMind 資產負債表的 date 是財報「期末日」，不是「公告日」，實際公佈本來就會
+    # 延遲：Q1-Q3 財報依規定 45 天內公告（這裡保守抓 60 天），年報 90 天內公告。
+    # 一般產業用 CapitalStock（股本合計）；金融業報表只提供 OrdinaryShare，兩者
+    # 同期都有時以 CapitalStock 優先，邏輯跟 backtest_relaxation_analysis.py 一致。
+    if balance_df is None or balance_df.empty:
+        price_df["capital_signal"] = True  # 沒有股本資料時視為一律通過，不因為缺資料就整批排除
+    else:
+        capital = balance_df[balance_df["type"].isin(["CapitalStock", "OrdinaryShare"])][
+            ["date", "type", "value"]
+        ].copy()
+        if capital.empty:
+            price_df["capital_signal"] = True
+        else:
+            capital["type_priority"] = capital["type"].map({"OrdinaryShare": 0, "CapitalStock": 1})
+            capital = capital.sort_values(["date", "type_priority"]).drop_duplicates("date", keep="last")
+            capital["report_date"] = pd.to_datetime(capital["date"])
+            capital["effective_date"] = capital["report_date"] + capital["report_date"].dt.month.map(
+                lambda month: pd.Timedelta(days=90 if month == 12 else 60)
+            )
+            capital["effective_date"] = capital["effective_date"].astype("datetime64[ns]")
+            capital = capital.sort_values("effective_date").drop_duplicates("effective_date", keep="last")
+            price_df["date"] = pd.to_datetime(price_df["date"]).astype("datetime64[ns]")
+            price_df = pd.merge_asof(
+                price_df.sort_values("date"),
+                capital[["effective_date", "value"]].rename(columns={"value": "capital_value"}),
+                left_on="date",
+                right_on="effective_date",
+                direction="backward",
+            )
+            price_df["capital_signal"] = (price_df["capital_value"] < CAPITAL_LIMIT).fillna(False)
+
+    raw_signal = (
+        price_df["tech_signal"]
+        & price_df["inst_signal"]
+        & price_df["revenue_signal"]
+        & price_df["capital_signal"]
+    )
     # 連續數日都符合只視為同一次訊號，避免同一波行情被重複計權。
     price_df["signal"] = raw_signal & ~raw_signal.shift(1, fill_value=False)
 
@@ -671,13 +720,17 @@ def _compute_backtest_signals_for_stock(
 
 def run_backtest() -> dict:
     """
-    回測主流程：對 WATCHLIST 每一檔股票，抓歷史資料 -> 逐日計算三條件訊號
+    回測主流程：對 WATCHLIST 每一檔股票，抓歷史資料 -> 逐日計算四條件訊號
     -> 依持有天數分別統計勝率與報酬。方法論上的限制見本節開頭的說明文字。
+
+    四條件 = 技術面 + 籌碼面 + 基本面 + 股本（跟 /api/scan 即時掃描同一套規則，
+    2026-07 之前的版本少了股本這個條件，回測結果沒辦法直接拿來對照即時掃描的
+    表現，這裡補上之後兩邊測的才是同一套策略）。
     """
     logger.info(f"=== 開始回測（觀察清單 {len(WATCHLIST)} 檔，回溯 {BACKTEST_LOOKBACK_DAYS} 天）===")
 
     end_date = date.today()
-    # 營收要多抓將近一年的緩衝，才能算出回測窗口「最早那一天」的年增率
+    # 營收/股本都要多抓將近一年的緩衝，才能算出回測窗口「最早那一天」的年增率／股本
     price_start = (end_date - timedelta(days=BACKTEST_LOOKBACK_DAYS + 40)).isoformat()
     inst_start = (end_date - timedelta(days=BACKTEST_LOOKBACK_DAYS + 10)).isoformat()
     rev_start = (end_date - timedelta(days=BACKTEST_LOOKBACK_DAYS + 400)).isoformat()
@@ -693,8 +746,9 @@ def run_backtest() -> dict:
             if not inst_df.empty and "name" in inst_df.columns:
                 inst_df = inst_df[inst_df["name"] == INVESTMENT_TRUST_NAME]
             rev_df = _finmind_get("TaiwanStockMonthRevenue", rev_start, end_iso, data_id=stock_id)
+            balance_df = _finmind_get("TaiwanStockBalanceSheet", rev_start, end_iso, data_id=stock_id)
 
-            signals = _compute_backtest_signals_for_stock(stock_id, price_df, inst_df, rev_df)
+            signals = _compute_backtest_signals_for_stock(stock_id, price_df, inst_df, rev_df, balance_df)
             if not signals.empty:
                 all_signals.append(signals)
         except Exception as e:
