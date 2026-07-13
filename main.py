@@ -64,6 +64,7 @@ AI 選股助理（/api/chat）金鑰設定（非必要，兩個都不設定也�
 
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -204,6 +205,26 @@ def _finmind_get(
         return pd.DataFrame()
     finally:
         time.sleep(REQUEST_DELAY_SECONDS)
+
+
+def _json_safe(value):
+    """
+    遞迴把 NaN / Infinity / -Infinity 換成 None。
+
+    pandas/numpy 的計算很容易產生這些值（例如除以零、0/0），但標準 JSON
+    格式不允許這些值，FastAPI 預設用 Python 內建的 json.dumps 序列化回應，
+    遇到就直接丟 ValueError、整支 API 回傳 500——不是「資料有點怪」而是
+    「整支功能打不開」。所有要回傳給前端的 dict/list，最後都應該先過一次
+    這個函式再回傳，才不會因為某一檔股票某一天剛好某個欄位算出 nan/inf，
+    就讓一個原本 90% 都算好的結果整包回傳失敗。
+    """
+    if isinstance(value, float):
+        return None if (math.isnan(value) or math.isinf(value)) else value
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 # ======================================================================
@@ -437,7 +458,7 @@ def run_full_scan() -> list:
     merged = merged[output_columns].sort_values("volume_multiplier", ascending=False)
 
     logger.info(f"=== 掃描完成，最終符合三大生態條件：{len(merged)} 檔 ===")
-    return merged.to_dict(orient="records")
+    return _json_safe(merged.to_dict(orient="records"))
 
 
 # ======================================================================
@@ -620,6 +641,8 @@ def _compute_backtest_signals_for_stock(
             continue
         # 日線收盤後才能確認量價與法人條件，因此最早只能在次日開盤成交。
         raw_entry_price = float(price_df.loc[entry_idx, "open"])
+        if raw_entry_price <= 0:
+            continue  # 開盤價異常（停牌/資料缺漏），跳過避免後面除以零產生 inf/nan
         entry_price = raw_entry_price * (1 + BACKTEST_SLIPPAGE_RATE)
         record = {
             "stock_id": stock_id,
@@ -730,7 +753,7 @@ def run_backtest() -> dict:
     signal_list = signals_df.head(100).to_dict(orient="records")
 
     logger.info(f"=== 回測完成，回測窗口內共 {len(signals_df)} 次訊號 ===")
-    return {"summary": summary, "signals": signal_list}
+    return _json_safe({"summary": summary, "signals": signal_list})
 
 
 # ======================================================================
@@ -929,7 +952,7 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
     except Exception as e:
         logger.warning(f"[個股詳情] 股票 {stock_id} 查詢投信買賣超失敗，已跳過：{e}")
 
-    return {
+    return _json_safe({
         "stock_id": stock_id,
         "stock_name": stock_name,
         "industry": industry,
@@ -947,7 +970,7 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
         "technical_indicators": technical_indicators,
         "revenue_trend": revenue_trend,
         "institutional_recent": institutional_recent,
-    }
+    })
 
 
 # ======================================================================
