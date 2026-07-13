@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+latest_scan_result.json
+latest_scan_result.tmp
+.DS_Store
