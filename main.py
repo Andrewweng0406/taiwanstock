@@ -69,6 +69,7 @@ import math
 import os
 import threading
 import time
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -77,7 +78,7 @@ from typing import Optional
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -164,10 +165,21 @@ app = FastAPI(
     description="一鍵掃描全市場（TWSE 上市 + TPEx 上櫃）：技術面 + 籌碼面 + 基本面 三大生態選股，並可回測驗證勝率、查詢個股詳情",
 )
 
-# 開發階段先開放所有來源；正式上線請把 allow_origins 改成你前端的實際網域
+# 2026-07-13：正式上線後才發現一直忘記把這裡從開發階段的 allow_origins=["*"]
+# 收回來——開放所有來源代表任何網站都能讓使用者瀏覽器直接呼叫這支 API。
+# 預設鎖定正式站前端網域 + 本機開發用的 localhost，可用 ALLOWED_ORIGINS
+# 環境變數（逗號分隔）覆蓋，之後換網域/加自訂網域不用改程式碼重新部署。
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://frontend-production-6ee3.up.railway.app,http://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -179,6 +191,44 @@ app.add_middleware(
 #    不應該讓它們同時進行。
 # ======================================================================
 heavy_task_lock = threading.Lock()
+
+
+# ======================================================================
+# 2.5 簡單的每 IP 頻率限制：CORS 只擋得住瀏覽器發出的跨網域請求，擋不住
+#    有人直接寫腳本打 API。/api/chat 每次呼叫都會燒 OpenAI/Gemini 額度、
+#    /api/stock/{id} 每次都會燒 FinMind 額度，兩個都是「重複呼叫 = 直接
+#    燒錢/燒額度」的端點，值得加這一層保護。
+#
+#    用記憶體內的固定視窗（fixed window）算，不需要額外的 Redis／資料庫，
+#    現在只有單一 Railway instance，夠用；如果之後水平擴展成多個 instance，
+#    要換成共用儲存才能跨 instance 一起算，不然每個 instance 會各自放行。
+# ======================================================================
+_rate_limit_lock = threading.Lock()
+_rate_limit_history: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    """優先用 Railway 等反向代理帶的 X-Forwarded-For，沒有才退回連線本身的 IP。"""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(request: Request, bucket: str, max_requests: int, window_seconds: int = 60) -> None:
+    """超過頻率限制就直接丟 HTTP 429，讓呼叫端知道是被擋，不是伺服器出錯。"""
+    key = f"{bucket}:{_client_ip(request)}"
+    now = time.time()
+    with _rate_limit_lock:
+        history = _rate_limit_history[key]
+        while history and now - history[0] > window_seconds:
+            history.popleft()
+        if len(history) >= max_requests:
+            raise HTTPException(
+                status_code=429,
+                detail=f"請求太頻繁，請稍後再試（每 {window_seconds} 秒最多 {max_requests} 次）",
+            )
+        history.append(now)
 
 
 # ======================================================================
@@ -1148,12 +1198,16 @@ def backtest():
 
 
 @app.get("/api/stock/{stock_id}")
-def get_stock_detail(stock_id: str):
+def get_stock_detail(stock_id: str, request: Request):
     """
     股票比較／個股詳情頁用的單股資料 API。跟 /api/scan、/api/backtest 不同，
     這支不用搶 heavy_task_lock——單股查詢只需要幾次 FinMind 請求，幾秒鐘
     就能回應，不是那種需要鎖住、避免重複觸發的重運算。
+
+    每個 IP 每分鐘最多 30 次（見 _enforce_rate_limit）：這支每次呼叫都會
+    消耗 FinMind 額度，比較頁一次最多同時查 3 檔，正常使用不太可能撞到。
     """
+    _enforce_rate_limit(request, "stock_detail", max_requests=30, window_seconds=60)
     stock_id = stock_id.strip()
     try:
         detail = fetch_stock_detail(stock_id)
@@ -1172,7 +1226,7 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat")
-def chat(request: ChatRequest):
+def chat(payload: ChatRequest, http_request: Request):
     """
     AI 選股助理。把「今天最新一次 /api/scan 的快取結果」當背景資料塞進
     prompt，讓 AI 根據後端真的算出來的資料回答問題，不是憑空亂講。
@@ -1184,10 +1238,14 @@ def chat(request: ChatRequest):
     三層架構（見 chat_assistant.py 開頭說明）：設定 OPENAI_API_KEY 就用
     OpenAI；沒設定就試 GEMINI_API_KEY；兩個都沒設定，退回本地規則式回覆，
     這樣就算還沒申請 LLM 金鑰，聊天功能也不會整個打不開。
+
+    每個 IP 每分鐘最多 10 次（見 _enforce_rate_limit）：這支每次呼叫都會
+    消耗 OpenAI/Gemini 額度（真金白銀），是這幾個端點裡最該優先擋濫用的。
     """
+    _enforce_rate_limit(http_request, "chat", max_requests=10, window_seconds=60)
     scan_context = _load_scan_cache()
     try:
-        result = chat_assistant.generate_reply(request.user_message, scan_context=scan_context)
+        result = chat_assistant.generate_reply(payload.user_message, scan_context=scan_context)
         return {"success": True, "reply": result["reply"], "source": result["source"]}
     except Exception as e:
         logger.exception("AI 助理回覆發生未預期錯誤")
