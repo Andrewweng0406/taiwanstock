@@ -1,0 +1,707 @@
+{
+  "method": "current capital < 4bn NTD; top 100 by 20-day median traded value",
+  "minimum_median_daily_value": 10000000,
+  "count": 100,
+  "data": [
+    {
+      "stock_id": "3008",
+      "stock_name": "大立光",
+      "capital": 1307981970,
+      "median_daily_value": 13127542450,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8299",
+      "stock_name": "群聯",
+      "capital": 2210857470,
+      "median_daily_value": 11375100000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2383",
+      "stock_name": "台光電",
+      "capital": 3583211140,
+      "median_daily_value": 11144217980,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3443",
+      "stock_name": "創意",
+      "capital": 1340119110,
+      "median_daily_value": 9926303145,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3017",
+      "stock_name": "奇鋐",
+      "capital": 3925430070,
+      "median_daily_value": 9785868990,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6274",
+      "stock_name": "台燿",
+      "capital": 2887746370,
+      "median_daily_value": 9343475000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6669",
+      "stock_name": "緯穎",
+      "capital": 1858407910,
+      "median_daily_value": 8925395670,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3661",
+      "stock_name": "世芯-KY",
+      "capital": 862047220,
+      "median_daily_value": 7992961700,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6213",
+      "stock_name": "聯茂",
+      "capital": 3635622180,
+      "median_daily_value": 7726805189,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3042",
+      "stock_name": "晶技",
+      "capital": 3429929710,
+      "median_daily_value": 7394102616,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3665",
+      "stock_name": "貿聯-KY",
+      "capital": 1950784050,
+      "median_daily_value": 5950492452,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6223",
+      "stock_name": "旺矽",
+      "capital": 979813090,
+      "median_daily_value": 5614472500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2472",
+      "stock_name": "立隆電",
+      "capital": 1647351370,
+      "median_daily_value": 5228571706,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5289",
+      "stock_name": "宜鼎",
+      "capital": 963374170,
+      "median_daily_value": 5218502500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8358",
+      "stock_name": "金居",
+      "capital": 2525880000,
+      "median_daily_value": 4925076000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2404",
+      "stock_name": "漢唐",
+      "capital": 1905866980,
+      "median_daily_value": 4642595852,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2484",
+      "stock_name": "希華",
+      "capital": 1594210220,
+      "median_daily_value": 4452340386,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3081",
+      "stock_name": "聯亞",
+      "capital": 925172770,
+      "median_daily_value": 4421652500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "7769",
+      "stock_name": "鴻勁",
+      "capital": 1799300000,
+      "median_daily_value": 4336089090,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6139",
+      "stock_name": "亞翔",
+      "capital": 2355757240,
+      "median_daily_value": 4214487504,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6271",
+      "stock_name": "同欣電",
+      "capital": 2090580240,
+      "median_daily_value": 4168412572,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3374",
+      "stock_name": "精材",
+      "capital": 2713643160,
+      "median_daily_value": 4159014500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3653",
+      "stock_name": "健策",
+      "capital": 1467328030,
+      "median_daily_value": 4033316828,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2059",
+      "stock_name": "川湖",
+      "capital": 952970720,
+      "median_daily_value": 4025783535,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3260",
+      "stock_name": "威剛",
+      "capital": 3257440480,
+      "median_daily_value": 3971163750,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5274",
+      "stock_name": "信驊",
+      "capital": 378026850,
+      "median_daily_value": 3792797500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6531",
+      "stock_name": "愛普*",
+      "capital": 814232700,
+      "median_daily_value": 3632954346,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6446",
+      "stock_name": "藥華藥",
+      "capital": 3816063700,
+      "median_daily_value": 3512778638,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3450",
+      "stock_name": "聯鈞",
+      "capital": 1456813820,
+      "median_daily_value": 3440238062,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8261",
+      "stock_name": "富鼎",
+      "capital": 1188783930,
+      "median_daily_value": 3333627882,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6515",
+      "stock_name": "穎崴",
+      "capital": 360380420,
+      "median_daily_value": 3292307380,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6442",
+      "stock_name": "光聖",
+      "capital": 804501550,
+      "median_daily_value": 3111946115,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2375",
+      "stock_name": "凱美",
+      "capital": 1086753340,
+      "median_daily_value": 3060972081,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "4979",
+      "stock_name": "華星光",
+      "capital": 1423592840,
+      "median_daily_value": 2921432000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6451",
+      "stock_name": "訊芯-KY",
+      "capital": 1142555360,
+      "median_daily_value": 2710543256,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3406",
+      "stock_name": "玉晶光",
+      "capital": 1127430630,
+      "median_daily_value": 2593053893,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3006",
+      "stock_name": "晶豪科",
+      "capital": 2981278410,
+      "median_daily_value": 2559534058,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2481",
+      "stock_name": "強茂",
+      "capital": 3821149270,
+      "median_daily_value": 2472362781,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8043",
+      "stock_name": "蜜望實",
+      "capital": 799071700,
+      "median_daily_value": 2441725750,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6415",
+      "stock_name": "矽力*-KY",
+      "capital": 973632132,
+      "median_daily_value": 2282358422,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5351",
+      "stock_name": "鈺創",
+      "capital": 3284647810,
+      "median_daily_value": 2282210900,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5328",
+      "stock_name": "華容",
+      "capital": 1727107240,
+      "median_daily_value": 2272968400,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3491",
+      "stock_name": "昇達科",
+      "capital": 688051250,
+      "median_daily_value": 2230550000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8028",
+      "stock_name": "昇陽半導體",
+      "capital": 1794917290,
+      "median_daily_value": 2129059357,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3026",
+      "stock_name": "禾伸堂",
+      "capital": 1658903180,
+      "median_daily_value": 2100987404,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3211",
+      "stock_name": "順達",
+      "capital": 1543050210,
+      "median_daily_value": 2074288000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3324",
+      "stock_name": "雙鴻",
+      "capital": 930768370,
+      "median_daily_value": 2031285000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3363",
+      "stock_name": "上詮",
+      "capital": 1136405670,
+      "median_daily_value": 1933998000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6805",
+      "stock_name": "富世達",
+      "capital": 685538960,
+      "median_daily_value": 1865672658,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6187",
+      "stock_name": "萬潤",
+      "capital": 981933850,
+      "median_daily_value": 1854990000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8996",
+      "stock_name": "高力",
+      "capital": 933874290,
+      "median_daily_value": 1821860468,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3533",
+      "stock_name": "嘉澤",
+      "capital": 1125346910,
+      "median_daily_value": 1755681210,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "1519",
+      "stock_name": "華城",
+      "capital": 3158808440,
+      "median_daily_value": 1751565076,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "4931",
+      "stock_name": "新盛力",
+      "capital": 655657610,
+      "median_daily_value": 1743788500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3035",
+      "stock_name": "智原",
+      "capital": 2605503130,
+      "median_daily_value": 1742209808,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6278",
+      "stock_name": "台表科",
+      "capital": 2923983530,
+      "median_daily_value": 1667335081,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2486",
+      "stock_name": "一詮",
+      "capital": 2339585790,
+      "median_daily_value": 1659070558,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6173",
+      "stock_name": "信昌電",
+      "capital": 1712000000,
+      "median_daily_value": 1655464000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3707",
+      "stock_name": "漢磊",
+      "capital": 3964719090,
+      "median_daily_value": 1611537000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5425",
+      "stock_name": "台半",
+      "capital": 2634854860,
+      "median_daily_value": 1602375500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3357",
+      "stock_name": "臺慶科",
+      "capital": 1149369710,
+      "median_daily_value": 1588523750,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3163",
+      "stock_name": "波若威",
+      "capital": 805407410,
+      "median_daily_value": 1586974000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6672",
+      "stock_name": "騰輝電子-KY",
+      "capital": 816202120,
+      "median_daily_value": 1577142551,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6409",
+      "stock_name": "旭隼",
+      "capital": 882535660,
+      "median_daily_value": 1571203034,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3016",
+      "stock_name": "嘉晶",
+      "capital": 2885418190,
+      "median_daily_value": 1560941468,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2464",
+      "stock_name": "盟立",
+      "capital": 2064312260,
+      "median_daily_value": 1549321774,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3131",
+      "stock_name": "弘塑",
+      "capital": 292160150,
+      "median_daily_value": 1539330000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "4991",
+      "stock_name": "環宇-KY",
+      "capital": 1210847260,
+      "median_daily_value": 1512120000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3715",
+      "stock_name": "定穎投控",
+      "capital": 2835745840,
+      "median_daily_value": 1505613233,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2426",
+      "stock_name": "鼎元",
+      "capital": 3006222520,
+      "median_daily_value": 1501885691,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2455",
+      "stock_name": "全新",
+      "capital": 1849059180,
+      "median_daily_value": 1486803722,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5269",
+      "stock_name": "祥碩",
+      "capital": 741566790,
+      "median_daily_value": 1473444788,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6510",
+      "stock_name": "精測",
+      "capital": 327890220,
+      "median_daily_value": 1407277500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6781",
+      "stock_name": "AES-KY",
+      "capital": 854187800,
+      "median_daily_value": 1404039720,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3529",
+      "stock_name": "力旺",
+      "capital": 746864920,
+      "median_daily_value": 1401577500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2351",
+      "stock_name": "順德",
+      "capital": 1821402490,
+      "median_daily_value": 1376349506,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "2458",
+      "stock_name": "義隆",
+      "capital": 3038803920,
+      "median_daily_value": 1372542170,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6197",
+      "stock_name": "佳必琪",
+      "capital": 1220858820,
+      "median_daily_value": 1364368890,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6207",
+      "stock_name": "雷科",
+      "capital": 796799100,
+      "median_daily_value": 1348319000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8210",
+      "stock_name": "勤誠",
+      "capital": 1253191460,
+      "median_daily_value": 1343572718,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8033",
+      "stock_name": "雷虎",
+      "capital": 1646297750,
+      "median_daily_value": 1332396375,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6719",
+      "stock_name": "力智",
+      "capital": 1054839890,
+      "median_daily_value": 1317019937,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6683",
+      "stock_name": "雍智科技",
+      "capital": 275571610,
+      "median_daily_value": 1314450000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6175",
+      "stock_name": "立敦",
+      "capital": 1501218120,
+      "median_daily_value": 1284476000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3293",
+      "stock_name": "鈊象",
+      "capital": 2818015600,
+      "median_daily_value": 1271556000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6217",
+      "stock_name": "中探針",
+      "capital": 1172100180,
+      "median_daily_value": 1258390000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5536",
+      "stock_name": "聖暉*",
+      "capital": 620404650,
+      "median_daily_value": 1239210000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3583",
+      "stock_name": "辛耘",
+      "capital": 803460800,
+      "median_daily_value": 1198278700,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3362",
+      "stock_name": "先進光",
+      "capital": 1474454750,
+      "median_daily_value": 1192666000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "4967",
+      "stock_name": "十銓",
+      "capital": 849632880,
+      "median_daily_value": 1180277671,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3167",
+      "stock_name": "大量",
+      "capital": 885051720,
+      "median_daily_value": 1158778738,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8039",
+      "stock_name": "台虹",
+      "capital": 2636689940,
+      "median_daily_value": 1126370314,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3149",
+      "stock_name": "正達",
+      "capital": 2262336040,
+      "median_daily_value": 1101207302,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6789",
+      "stock_name": "采鈺",
+      "capital": 3182991190,
+      "median_daily_value": 1080250645,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6196",
+      "stock_name": "帆宣",
+      "capital": 2203295290,
+      "median_daily_value": 1056076768,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "5371",
+      "stock_name": "中光電",
+      "capital": 3909811100,
+      "median_daily_value": 1044010000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "3019",
+      "stock_name": "亞光",
+      "capital": 2792439010,
+      "median_daily_value": 1039777397,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "6290",
+      "stock_name": "良維",
+      "capital": 1695008980,
+      "median_daily_value": 1039589500,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "4966",
+      "stock_name": "譜瑞-KY",
+      "capital": 789577880,
+      "median_daily_value": 1029652000,
+      "trading_days": 20
+    },
+    {
+      "stock_id": "8016",
+      "stock_name": "矽創",
+      "capital": 1201368760,
+      "median_daily_value": 1008210003,
+      "trading_days": 20
+    }
+  ]
+}
