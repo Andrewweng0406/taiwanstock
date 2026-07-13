@@ -107,6 +107,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ id: stri
                 {stock.change.toFixed(2)} ({stock.change_percent.toFixed(2)}%)
               </span>
             </div>
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+              ⚠️ 資料截至 {stock.price_date} 收盤，為收盤後結算資料，非即時盤中報價
+            </p>
           </div>
         </div>
       </div>

@@ -13,6 +13,7 @@ export default function Page() {
   const [hasScanned, setHasScanned] = useState(false);
   const [results, setResults] = useState<ScanResultItem[]>([]);
   const [scanTime, setScanTime] = useState<string | null>(null);
+  const [tradingDate, setTradingDate] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -28,6 +29,7 @@ export default function Page() {
       }
       setResults(outcome.data);
       setScanTime(outcome.scanTime ?? null);
+      setTradingDate(outcome.tradingDate ?? null);
       setFromCache(outcome.fromCache);
       setHasScanned(true);
     } catch (err) {
@@ -61,6 +63,11 @@ export default function Page() {
                     強制重新掃描
                   </button>
                 )}
+              </p>
+            )}
+            {tradingDate && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                ⚠️ 資料截至 {tradingDate} 收盤結算，為證交所/櫃買中心收盤後公布資料，非即時盤中報價
               </p>
             )}
           </div>

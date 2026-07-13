@@ -408,11 +408,15 @@ def analyze_revenue_and_capital_market() -> pd.DataFrame:
 # ======================================================================
 # 7. 三大生態合併（全市場 = 上市 TWSE + 上櫃 TPEx，約 1800 多檔）
 # ======================================================================
-def run_full_scan() -> list:
+def run_full_scan() -> tuple:
     """
     掃描主流程：技術面 -> 籌碼面 -> 基本面，三者在本地端取交集（inner join），
     只有同時符合三大條件的股票才會出現在最終結果。三個條件都是「上市 + 上櫃」
     全市場範圍，股票名稱已經在技術面那一步從行情資料裡帶出來了，不用再另外查一次。
+
+    回傳 (trading_date, results)：trading_date 是這次掃描實際採用的「最新結算
+    交易日」（TWSE/TPEx 收盤後才會公布的資料，不是當下即時盤中報價），前端要
+    用這個日期跟使用者說清楚「資料截至哪一天」，避免被誤會成即時行情。
     """
     logger.info("=== 開始三大生態選股掃描（全市場：上市 TWSE + 上櫃 TPEx）===")
 
@@ -422,24 +426,24 @@ def run_full_scan() -> list:
     logger.info(f"[技術面] 最新交易日：{trading_date}，通過篩選：{len(tech_df)} 檔")
 
     if tech_df.empty:
-        return []
+        return trading_date, []
 
     inst_df = analyze_institutional_market()
     logger.info(f"[籌碼面] 通過篩選：{len(inst_df)} 檔")
     if inst_df.empty:
-        return []
+        return trading_date, []
 
     fundamental_df = analyze_revenue_and_capital_market()
     logger.info(f"[基本面] 通過篩選：{len(fundamental_df)} 檔")
     if fundamental_df.empty:
-        return []
+        return trading_date, []
 
     # ---- 三大條件取交集 ----
     merged = tech_df.merge(inst_df, on="stock_id", how="inner")
     merged = merged.merge(fundamental_df, on="stock_id", how="inner")
 
     if merged.empty:
-        return []
+        return trading_date, []
 
     # ---- 對齊前端表格欄位順序 ----
     output_columns = [
@@ -458,7 +462,7 @@ def run_full_scan() -> list:
     merged = merged[output_columns].sort_values("volume_multiplier", ascending=False)
 
     logger.info(f"=== 掃描完成，最終符合三大生態條件：{len(merged)} 檔 ===")
-    return _json_safe(merged.to_dict(orient="records"))
+    return trading_date, _json_safe(merged.to_dict(orient="records"))
 
 
 # ======================================================================
@@ -484,7 +488,7 @@ def _load_scan_cache() -> Optional[dict]:
         return None
 
 
-def _save_scan_cache(scan_time: str, results: list) -> None:
+def _save_scan_cache(scan_time: str, trading_date: str, results: list) -> None:
     """
     把掃描結果寫進本地快取檔案。用「先寫暫存檔、再原子性 rename」的方式，
     避免另一個請求剛好在讀取時，讀到寫到一半的檔案。寫入失敗只記錄 log，
@@ -493,6 +497,7 @@ def _save_scan_cache(scan_time: str, results: list) -> None:
     cache = {
         "scan_date": date.today().isoformat(),
         "scan_time": scan_time,
+        "trading_date": trading_date,
         "total_count": len(results),
         "data": results,
     }
@@ -1011,6 +1016,7 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
         "stock_name": stock_name,
         "industry": industry,
         "current_price": current_price,
+        "price_date": latest["date"].strftime("%Y-%m-%d"),
         "change": round(change, 2),
         "change_percent": round(change_percent, 2),
         "volume": float(latest["Trading_Volume"]),
@@ -1054,6 +1060,7 @@ def scan_stocks(force: bool = False):
             return {
                 "success": True,
                 "scan_time": cached["scan_time"],
+                "trading_date": cached.get("trading_date"),
                 "total_count": cached["total_count"],
                 "data": cached["data"],
                 "from_cache": True,
@@ -1067,12 +1074,13 @@ def scan_stocks(force: bool = False):
         )
 
     try:
-        results = run_full_scan()
+        trading_date, results = run_full_scan()
         scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        _save_scan_cache(scan_time, results)
+        _save_scan_cache(scan_time, trading_date, results)
         return {
             "success": True,
             "scan_time": scan_time,
+            "trading_date": trading_date,
             "total_count": len(results),
             "data": results,
             "from_cache": False,

@@ -74,7 +74,8 @@ export function PriceComparator() {
   }, [selectedIds]);
 
   const metricRows: Array<{ label: string; render: (s: StockDetail) => string }> = [
-    { label: '現價', render: (s) => `NT$${s.current_price.toFixed(2)}` },
+    { label: '現價（收盤）', render: (s) => `NT$${s.current_price.toFixed(2)}` },
+    { label: '資料日期', render: (s) => s.price_date },
     {
       label: '漲跌幅',
       render: (s) => `${s.change_percent >= 0 ? '+' : ''}${s.change_percent.toFixed(2)}%`,
@@ -105,37 +106,42 @@ export function PriceComparator() {
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">指標</th>
-                {selectedIds.map((id) => (
-                  <th key={id} className="px-4 py-3 text-left text-sm font-semibold text-foreground">
-                    {stocks[id]?.stock_name ?? id}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {metricRows.map((row) => (
-                <tr key={row.label} className="border-b border-border hover:bg-muted/30">
-                  <td className="px-4 py-3 text-sm font-medium text-muted-foreground">{row.label}</td>
+        <div className="space-y-2">
+          <p className="text-xs text-amber-600 dark:text-amber-500">
+            ⚠️ 以下皆為收盤後結算資料（見「資料日期」列），非即時盤中報價
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-border bg-card">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">指標</th>
                   {selectedIds.map((id) => (
-                    <td key={`${id}-${row.label}`} className="px-4 py-3 text-sm text-foreground">
-                      {stocks[id] ? (
-                        row.render(stocks[id])
-                      ) : errors[id] ? (
-                        <span className="text-destructive">{errors[id]}</span>
-                      ) : (
-                        <span className="text-muted-foreground">載入中…</span>
-                      )}
-                    </td>
+                    <th key={id} className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                      {stocks[id]?.stock_name ?? id}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {metricRows.map((row) => (
+                  <tr key={row.label} className="border-b border-border hover:bg-muted/30">
+                    <td className="px-4 py-3 text-sm font-medium text-muted-foreground">{row.label}</td>
+                    {selectedIds.map((id) => (
+                      <td key={`${id}-${row.label}`} className="px-4 py-3 text-sm text-foreground">
+                        {stocks[id] ? (
+                          row.render(stocks[id])
+                        ) : errors[id] ? (
+                          <span className="text-destructive">{errors[id]}</span>
+                        ) : (
+                          <span className="text-muted-foreground">載入中…</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

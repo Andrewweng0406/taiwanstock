@@ -15,6 +15,7 @@ export interface ScanResultItem {
 interface ScanApiResponse {
   success: boolean;
   scan_time?: string;
+  trading_date?: string;
   total_count?: number;
   data?: ScanResultItem[];
   from_cache?: boolean;
@@ -26,6 +27,8 @@ export interface ScanOutcome {
   ok: boolean;
   message?: string;
   scanTime?: string;
+  /** 這批資料實際反映的證交所/櫃買中心「最新結算交易日」，不是即時盤中報價 */
+  tradingDate?: string;
   fromCache: boolean;
   data: ScanResultItem[];
 }
@@ -54,6 +57,7 @@ export async function scanStocks(force: boolean = false): Promise<ScanOutcome> {
   return {
     ok: true,
     scanTime: body?.scan_time,
+    tradingDate: body?.trading_date,
     fromCache: body?.from_cache ?? false,
     data: body?.data ?? [],
   };
@@ -174,6 +178,8 @@ export interface StockDetail {
   stock_name: string;
   industry: string | null;
   current_price: number;
+  /** current_price 實際對應的交易日（收盤價），不是即時報價的時間戳 */
+  price_date: string;
   change: number;
   change_percent: number;
   volume: number;
