@@ -23,6 +23,7 @@ revenue_growth_yoy），main.py 才能直接把兩邊的 DataFrame pd.concat 在
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Optional
 
@@ -36,6 +37,7 @@ REQUEST_DELAY_SECONDS = 0.2
 USER_AGENT = "Mozilla/5.0"
 RETRY_ATTEMPTS = 3  # 實測 TPEx 舊版端點偶爾會回傳暫時性 520，重試通常就會過
 RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增（1.5s, 3s），給對方伺服器喘息時間
+MAX_PARALLEL_REQUESTS = 8  # 抓歷史資料（逐日迴圈）時的平行執行緒數，理由跟 twse_data.py 相同
 
 # 只保留 4 碼數字、不以 0 開頭的證券代號，排除 ETF／債券 ETF／權證。
 STOCK_ID_PATTERN = re.compile(r"^[1-9]\d{3}$")
@@ -149,14 +151,14 @@ def fetch_daily_market_ohlc(target_date: date) -> pd.DataFrame:
 
 
 def fetch_market_ohlc_history(lookback_calendar_days: int = 40) -> pd.DataFrame:
-    """逐日呼叫 fetch_daily_market_ohlc()，組出上櫃全市場最近 N 個日曆天的歷史行情。"""
-    frames = []
+    """平行呼叫 fetch_daily_market_ohlc()，組出上櫃全市場最近 N 個日曆天的歷史行情。"""
     end_date = date.today()
-    for offset in range(lookback_calendar_days):
-        target_date = end_date - timedelta(days=offset)
-        df = fetch_daily_market_ohlc(target_date)
-        if not df.empty:
-            frames.append(df)
+    target_dates = [end_date - timedelta(days=offset) for offset in range(lookback_calendar_days)]
+    frames = []
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        for df in executor.map(fetch_daily_market_ohlc, target_dates):
+            if not df.empty:
+                frames.append(df)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
@@ -193,14 +195,14 @@ def fetch_daily_institutional(target_date: date) -> pd.DataFrame:
 
 
 def fetch_institutional_history(lookback_calendar_days: int = 15) -> pd.DataFrame:
-    """逐日呼叫 fetch_daily_institutional()，組出最近 N 個日曆天的上櫃投信買賣超歷史。"""
-    frames = []
+    """平行呼叫 fetch_daily_institutional()，組出最近 N 個日曆天的上櫃投信買賣超歷史。"""
     end_date = date.today()
-    for offset in range(lookback_calendar_days):
-        target_date = end_date - timedelta(days=offset)
-        df = fetch_daily_institutional(target_date)
-        if not df.empty:
-            frames.append(df)
+    target_dates = [end_date - timedelta(days=offset) for offset in range(lookback_calendar_days)]
+    frames = []
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        for df in executor.map(fetch_daily_institutional, target_dates):
+            if not df.empty:
+                frames.append(df)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)

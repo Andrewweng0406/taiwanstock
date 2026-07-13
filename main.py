@@ -996,91 +996,112 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
 
     technical_indicators = _compute_technical_indicators(price_df["close"])
 
-    # ---- 股票名稱／產業別 ----
-    stock_name, industry = stock_id, None
-    try:
-        info_df = _finmind_get("TaiwanStockInfo", "2000-01-01", data_id=stock_id)
-        if not info_df.empty:
-            info_row = info_df.iloc[-1]
-            stock_name = info_row.get("stock_name") or stock_id
-            industry = info_row.get("industry_category")
-    except Exception as e:
-        logger.warning(f"[個股詳情] 股票 {stock_id} 查詢名稱失敗，已跳過：{e}")
+    # ---- 剩下 5 個子區塊互相獨立，也不需要 price_df 的結果，各自對 FinMind
+    # 發一次請求，用執行緒平行查詢——原本是一個接一個序列等，5 個請求疊加的
+    # 等待時間很明顯；平行後總時間趨近於「最慢那一個請求」，而不是「全部加總」。
+    # 每個子函式仍各自保留原本的 try/except，任何一塊失敗只影響該欄位留空，
+    # 不會讓整支 API 掛掉，行為跟平行化之前完全一樣。
+    def _fetch_name_industry():
+        stock_name, industry = stock_id, None
+        try:
+            info_df = _finmind_get("TaiwanStockInfo", "2000-01-01", data_id=stock_id)
+            if not info_df.empty:
+                info_row = info_df.iloc[-1]
+                stock_name = info_row.get("stock_name") or stock_id
+                industry = info_row.get("industry_category")
+        except Exception as e:
+            logger.warning(f"[個股詳情] 股票 {stock_id} 查詢名稱失敗，已跳過：{e}")
+        return stock_name, industry
 
-    # ---- 本益比／股價淨值比／殖利率 ----
-    pe = pb = dividend_yield = None
-    try:
-        per_start = (end_date - timedelta(days=10)).isoformat()
-        per_df = _finmind_get("TaiwanStockPER", per_start, end_date.isoformat(), data_id=stock_id)
-        if not per_df.empty:
-            per_row = per_df.sort_values("date").iloc[-1]
-            pe = float(per_row["PER"]) if pd.notna(per_row.get("PER")) else None
-            pb = float(per_row["PBR"]) if pd.notna(per_row.get("PBR")) else None
-            dividend_yield = (
-                float(per_row["dividend_yield"]) if pd.notna(per_row.get("dividend_yield")) else None
+    def _fetch_valuation():
+        pe = pb = dividend_yield = None
+        try:
+            per_start = (end_date - timedelta(days=10)).isoformat()
+            per_df = _finmind_get("TaiwanStockPER", per_start, end_date.isoformat(), data_id=stock_id)
+            if not per_df.empty:
+                per_row = per_df.sort_values("date").iloc[-1]
+                pe = float(per_row["PER"]) if pd.notna(per_row.get("PER")) else None
+                pb = float(per_row["PBR"]) if pd.notna(per_row.get("PBR")) else None
+                dividend_yield = (
+                    float(per_row["dividend_yield"]) if pd.notna(per_row.get("dividend_yield")) else None
+                )
+        except Exception as e:
+            logger.warning(f"[個股詳情] 股票 {stock_id} 查詢本益比失敗，已跳過：{e}")
+        return pe, pb, dividend_yield
+
+    def _fetch_revenue():
+        revenue_trend = []
+        try:
+            rev_start = (end_date - timedelta(days=13 * 31 + 365)).isoformat()  # 多抓一年，才能算最早幾個月的年增率
+            rev_df = _finmind_get("TaiwanStockMonthRevenue", rev_start, end_date.isoformat(), data_id=stock_id)
+            if not rev_df.empty:
+                rev_df = rev_df.dropna(subset=["revenue", "revenue_month", "revenue_year"])
+                rev_df = rev_df.sort_values(["revenue_year", "revenue_month"])
+                for _, row in rev_df.tail(12).iterrows():
+                    mask = (rev_df["revenue_year"] == row["revenue_year"] - 1) & (
+                        rev_df["revenue_month"] == row["revenue_month"]
+                    )
+                    prev_rows = rev_df[mask]
+                    yoy = None
+                    if not prev_rows.empty and prev_rows.iloc[-1]["revenue"]:
+                        yoy = round(
+                            (row["revenue"] - prev_rows.iloc[-1]["revenue"]) / prev_rows.iloc[-1]["revenue"] * 100,
+                            2,
+                        )
+                    revenue_trend.append(
+                        {
+                            "month": f"{int(row['revenue_year'])}-{int(row['revenue_month']):02d}",
+                            "revenue": float(row["revenue"]),
+                            "yoy": yoy,
+                        }
+                    )
+        except Exception as e:
+            logger.warning(f"[個股詳情] 股票 {stock_id} 查詢營收趨勢失敗，已跳過：{e}")
+        return revenue_trend
+
+    def _fetch_institutional():
+        institutional_recent = []
+        try:
+            inst_start = (end_date - timedelta(days=20)).isoformat()
+            inst_df = _finmind_get(
+                "TaiwanStockInstitutionalInvestorsBuySell", inst_start, end_date.isoformat(), data_id=stock_id
             )
-    except Exception as e:
-        logger.warning(f"[個股詳情] 股票 {stock_id} 查詢本益比失敗，已跳過：{e}")
+            if not inst_df.empty and "name" in inst_df.columns:
+                inst_df = inst_df[inst_df["name"] == INVESTMENT_TRUST_NAME].sort_values("date")
+                for _, row in inst_df.tail(10).iterrows():
+                    buy_lots = float(row["buy"]) / 1000
+                    sell_lots = float(row["sell"]) / 1000
+                    institutional_recent.append(
+                        {
+                            "date": row["date"],
+                            "buy_lots": round(buy_lots, 1),
+                            "sell_lots": round(sell_lots, 1),
+                            "net_buy_lots": round(buy_lots - sell_lots, 1),
+                        }
+                    )
+        except Exception as e:
+            logger.warning(f"[個股詳情] 股票 {stock_id} 查詢投信買賣超失敗，已跳過：{e}")
+        return institutional_recent
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        name_industry_future = executor.submit(_fetch_name_industry)
+        valuation_future = executor.submit(_fetch_valuation)
+        capital_future = executor.submit(_fetch_stock_capital_info, stock_id)
+        revenue_future = executor.submit(_fetch_revenue)
+        institutional_future = executor.submit(_fetch_institutional)
+
+        stock_name, industry = name_industry_future.result()
+        pe, pb, dividend_yield = valuation_future.result()
+        capital_info = capital_future.result()
+        revenue_trend = revenue_future.result()
+        institutional_recent = institutional_future.result()
 
     # ---- 股本／市值（市值 = 真實在外流通股數 × 現價，不是估算值）----
-    capital_info = _fetch_stock_capital_info(stock_id)
     market_cap = (
         capital_info["shares_outstanding"] * current_price
         if capital_info["shares_outstanding"]
         else None
     )
-
-    # ---- 營收趨勢（近 12 個月，含年增率）----
-    revenue_trend = []
-    try:
-        rev_start = (end_date - timedelta(days=13 * 31 + 365)).isoformat()  # 多抓一年，才能算最早幾個月的年增率
-        rev_df = _finmind_get("TaiwanStockMonthRevenue", rev_start, end_date.isoformat(), data_id=stock_id)
-        if not rev_df.empty:
-            rev_df = rev_df.dropna(subset=["revenue", "revenue_month", "revenue_year"])
-            rev_df = rev_df.sort_values(["revenue_year", "revenue_month"])
-            for _, row in rev_df.tail(12).iterrows():
-                mask = (rev_df["revenue_year"] == row["revenue_year"] - 1) & (
-                    rev_df["revenue_month"] == row["revenue_month"]
-                )
-                prev_rows = rev_df[mask]
-                yoy = None
-                if not prev_rows.empty and prev_rows.iloc[-1]["revenue"]:
-                    yoy = round(
-                        (row["revenue"] - prev_rows.iloc[-1]["revenue"]) / prev_rows.iloc[-1]["revenue"] * 100,
-                        2,
-                    )
-                revenue_trend.append(
-                    {
-                        "month": f"{int(row['revenue_year'])}-{int(row['revenue_month']):02d}",
-                        "revenue": float(row["revenue"]),
-                        "yoy": yoy,
-                    }
-                )
-    except Exception as e:
-        logger.warning(f"[個股詳情] 股票 {stock_id} 查詢營收趨勢失敗，已跳過：{e}")
-
-    # ---- 投信近期買賣超明細（近 10 個交易日，單位：張，1 張 = 1000 股）----
-    institutional_recent = []
-    try:
-        inst_start = (end_date - timedelta(days=20)).isoformat()
-        inst_df = _finmind_get(
-            "TaiwanStockInstitutionalInvestorsBuySell", inst_start, end_date.isoformat(), data_id=stock_id
-        )
-        if not inst_df.empty and "name" in inst_df.columns:
-            inst_df = inst_df[inst_df["name"] == INVESTMENT_TRUST_NAME].sort_values("date")
-            for _, row in inst_df.tail(10).iterrows():
-                buy_lots = float(row["buy"]) / 1000
-                sell_lots = float(row["sell"]) / 1000
-                institutional_recent.append(
-                    {
-                        "date": row["date"],
-                        "buy_lots": round(buy_lots, 1),
-                        "sell_lots": round(sell_lots, 1),
-                        "net_buy_lots": round(buy_lots - sell_lots, 1),
-                    }
-                )
-    except Exception as e:
-        logger.warning(f"[個股詳情] 股票 {stock_id} 查詢投信買賣超失敗，已跳過：{e}")
 
     return _json_safe({
         "stock_id": stock_id,

@@ -17,6 +17,7 @@ twse_data.py — 台灣證券交易所（TWSE）公開資料撈取與清洗
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Optional
 
@@ -30,6 +31,9 @@ REQUEST_DELAY_SECONDS = 0.2  # 對證交所也保持禮貌，不要瞬間連續�
 USER_AGENT = "Mozilla/5.0"  # 部分舊版端點沒有帶 User-Agent 會回傳異常內容
 RETRY_ATTEMPTS = 3  # 舊版端點偶爾會回傳暫時性 5xx，重試通常就會過（實測見 tpex_data.py）
 RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增（1.5s, 3s），給對方伺服器喘息時間
+MAX_PARALLEL_REQUESTS = 8  # 抓歷史資料（逐日迴圈）時的平行執行緒數：太少會慢（原本序列
+# 抓 40 天要等 40 次來回），太多怕短時間內把免費、無官方文件的舊端點打到暫時性 5xx，
+# 8 是實測夠快、也還沒觀察到明顯被擋的折衷值
 
 # 只保留這種格式的證券代號：4 碼數字、不以 0 開頭。
 # 用意是把 ETF（0050、00940、00400A...）、權證等其他有價證券排除掉，
@@ -143,17 +147,20 @@ def fetch_daily_market_ohlc(target_date: date) -> pd.DataFrame:
 
 def fetch_market_ohlc_history(lookback_calendar_days: int = 40) -> pd.DataFrame:
     """
-    逐日呼叫 fetch_daily_market_ohlc()，組出全市場最近 N 個「日曆天」的歷史行情，
+    平行呼叫 fetch_daily_market_ohlc()，組出全市場最近 N 個「日曆天」的歷史行情，
     用來算 5MA / 20MA / 20 日均量。非交易日會自動被跳過（回傳空結果，不會混進來）。
     40 個日曆天通常能湊到至少 25-27 個交易日，足夠算 20MA。
+
+    每一天的請求互相獨立，原本用序列迴圈一天一天等，40 天要等 40 次來回；
+    改用 ThreadPoolExecutor 平行抓（見 MAX_PARALLEL_REQUESTS），明顯縮短等待時間。
     """
-    frames = []
     end_date = date.today()
-    for offset in range(lookback_calendar_days):
-        target_date = end_date - timedelta(days=offset)
-        df = fetch_daily_market_ohlc(target_date)
-        if not df.empty:
-            frames.append(df)
+    target_dates = [end_date - timedelta(days=offset) for offset in range(lookback_calendar_days)]
+    frames = []
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        for df in executor.map(fetch_daily_market_ohlc, target_dates):
+            if not df.empty:
+                frames.append(df)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
@@ -200,14 +207,14 @@ def fetch_daily_institutional(target_date: date) -> pd.DataFrame:
 
 
 def fetch_institutional_history(lookback_calendar_days: int = 15) -> pd.DataFrame:
-    """逐日呼叫 fetch_daily_institutional()，組出最近 N 個日曆天的投信買賣超歷史。"""
-    frames = []
+    """平行呼叫 fetch_daily_institutional()，組出最近 N 個日曆天的投信買賣超歷史。"""
     end_date = date.today()
-    for offset in range(lookback_calendar_days):
-        target_date = end_date - timedelta(days=offset)
-        df = fetch_daily_institutional(target_date)
-        if not df.empty:
-            frames.append(df)
+    target_dates = [end_date - timedelta(days=offset) for offset in range(lookback_calendar_days)]
+    frames = []
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        for df in executor.map(fetch_daily_institutional, target_dates):
+            if not df.empty:
+                frames.append(df)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
