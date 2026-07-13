@@ -32,15 +32,19 @@ import requests
 
 logger = logging.getLogger("taiwan_stock_scanner")
 
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 10  # 見下方 2026-07-13 說明：故意調短，讓抓歷史資料時的壞天數快速放棄
 REQUEST_DELAY_SECONDS = 0.2
 USER_AGENT = "Mozilla/5.0"
-RETRY_ATTEMPTS = 3  # 實測 TPEx 舊版端點偶爾會回傳暫時性 520，重試通常就會過
-RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增（1.5s, 3s），給對方伺服器喘息時間
-# 2026-07-13：正式站實測發現 TPEx 這支端點掛在 Cloudflare 後面，8 條並發會被
-# 直接判定成異常流量、大量回傳連線逾時／520／522（TWSE 同樣 8 條並發完全沒事，
-# 問題只在 TPEx），逼得重試機制一直 backoff，反而把總時間從幾十秒拖到一百多秒，
-# 還一度整個請求逾時。調低到 3 條並發後才穩定又比序列快。
+RETRY_ATTEMPTS = 2  # 同上，從 3 次降到 2 次，減少壞天數拖累整體時間
+RETRY_BACKOFF_SECONDS = 1.5  # 每次重試間隔遞增，給對方伺服器喘息時間
+# 2026-07-13：正式站實測發現 TPEx 這支端點掛在 Cloudflare 後面，即使把並發數從
+# 8 降到 3，同一次掃描仍然噴了 80 幾次連線逾時／520／522（TWSE 同樣的並發量
+# 完全零錯誤，問題確定只在 TPEx，不是我們併發數的問題，比較像是 TPEx／
+# Cloudflare 當下不穩定，或暫時把 Railway 的共用出口 IP 判定成可疑流量）。
+# 這種情況調低併發數沒有用，因為根本原因不是「我們打太快」。真正有效的作法
+# 是讓壞天數「快速放棄」而不是每次都陪它耗到 30 秒逾時 x 3 次重試——反正這是
+# 抓 40/15 天湊 MA/連續買超的迴圈，少個一兩天不影響計算，不值得為了救一天
+# 的資料花 90 秒。並發數維持 3，避免真的是我們造成負擔時雪上加霜。
 MAX_PARALLEL_REQUESTS = 3
 
 # 只保留 4 碼數字、不以 0 開頭的證券代號，排除 ETF／債券 ETF／權證。
