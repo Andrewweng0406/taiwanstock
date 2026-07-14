@@ -80,8 +80,10 @@ export function StockScreener({ results, loading, hasScanned }: StockScreenerPro
         </p>
       )}
 
+      {/* min-w 讓表格在窄螢幕維持可讀寬度，交給外層 overflow-x-auto 左右滑動，
+          不要讓瀏覽器把欄位越擠越窄、文字被迫逐字換行（手機實測過的真實問題） */}
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full min-w-[720px]">
           <thead>
             <tr className="border-b border-border bg-card">
               <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">股票代號</th>
