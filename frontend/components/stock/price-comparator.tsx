@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { TermTooltip } from '@/components/ui/term-tooltip';
 import { fetchStockDetail, type StockDetail } from '@/lib/api';
 
 // 快速選取清單：常見權值股，方便使用者一鍵加入比較，不用自己打代號。
@@ -73,17 +74,33 @@ export function PriceComparator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds]);
 
-  const metricRows: Array<{ label: string; render: (s: StockDetail) => string }> = [
+  const metricRows: Array<{ label: string; explanation?: string; render: (s: StockDetail) => string }> = [
     { label: '現價（收盤）', render: (s) => `NT$${s.current_price.toFixed(2)}` },
     { label: '資料日期', render: (s) => s.price_date },
     {
       label: '漲跌幅',
       render: (s) => `${s.change_percent >= 0 ? '+' : ''}${s.change_percent.toFixed(2)}%`,
     },
-    { label: '本益比', render: (s) => formatNumber(s.pe) },
-    { label: '股價淨值比', render: (s) => formatNumber(s.pb) },
-    { label: '殖利率', render: (s) => (s.dividend_yield === null ? '—' : `${s.dividend_yield.toFixed(2)}%`) },
-    { label: '市值', render: (s) => formatMarketCap(s.market_cap) },
+    {
+      label: '本益比',
+      explanation: '股價 ÷ 每股賺的錢，數字越低代表用比較便宜的價格買到這家公司的獲利，但要看同產業水準才有意義。',
+      render: (s) => formatNumber(s.pe),
+    },
+    {
+      label: '股價淨值比',
+      explanation: '股價 ÷ 每股淨值（公司帳上資產減負債後換算成每股的價值），大於 1 代表市場願意付比帳面價值更高的價錢買這家公司。',
+      render: (s) => formatNumber(s.pb),
+    },
+    {
+      label: '殖利率',
+      explanation: '每年配發的股息，占目前股價的比例，可以理解成用現在的價格買，每年大概能領到多少比例的現金股息。',
+      render: (s) => (s.dividend_yield === null ? '—' : `${s.dividend_yield.toFixed(2)}%`),
+    },
+    {
+      label: '市值',
+      explanation: '這家公司值多少錢＝股價 × 在外流通股數，數字越大代表公司規模越大。',
+      render: (s) => formatMarketCap(s.market_cap),
+    },
   ];
 
   return (
@@ -125,7 +142,12 @@ export function PriceComparator() {
               <tbody>
                 {metricRows.map((row) => (
                   <tr key={row.label} className="border-b border-border hover:bg-muted/30">
-                    <td className="px-4 py-3 text-sm font-medium text-muted-foreground">{row.label}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-muted-foreground">
+                      <span className="flex items-center">
+                        {row.label}
+                        {row.explanation && <TermTooltip explanation={row.explanation} />}
+                      </span>
+                    </td>
                     {selectedIds.map((id) => (
                       <td key={`${id}-${row.label}`} className="px-4 py-3 text-sm text-foreground">
                         {stocks[id] ? (

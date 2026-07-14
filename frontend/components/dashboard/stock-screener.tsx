@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
+import { TermTooltip } from '@/components/ui/term-tooltip';
 import type { ScanResultItem } from '@/lib/api';
 
 interface StockScreenerProps {
@@ -89,10 +90,30 @@ export function StockScreener({ results, loading, hasScanned }: StockScreenerPro
               <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">股票代號</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">股票名稱</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">現價</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">量能倍數</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">營收年增率</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">投信連買天數</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">建議停損價</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                <span className="flex items-center">
+                  量能倍數
+                  <TermTooltip explanation="今天成交量是過去 20 天平均成交量的幾倍。倍數越高，代表今天交易特別熱絡，可能有比較多人在關注這檔股票。" />
+                </span>
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                <span className="flex items-center">
+                  營收年增率
+                  <TermTooltip explanation="這家公司最新一個月的營業收入，跟去年同一個月比較，成長了百分之幾。正數代表營收在成長。" />
+                </span>
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                <span className="flex items-center">
+                  投信連買天數
+                  <TermTooltip explanation="「投信」是三大法人之一（本土基金公司），連續買超代表投信連續好幾天買進這檔股票、沒有賣超，通常被視為法人看好的訊號之一。" />
+                </span>
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                <span className="flex items-center">
+                  建議停損價
+                  <TermTooltip explanation="用規則算出來的參考價位（今天開盤價），不是保證線。如果之後股價跌破這個價位，這套規則的邏輯是認賠出場、控制損失，但實際上要不要照做，還是你自己決定。" />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>

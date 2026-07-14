@@ -1,4 +1,5 @@
 import type { TechnicalIndicators as TechnicalIndicatorsType } from '@/lib/api';
+import { TermTooltip } from '@/components/ui/term-tooltip';
 
 interface TechnicalIndicatorsProps {
   indicators: TechnicalIndicatorsType;
@@ -32,7 +33,10 @@ export function TechnicalIndicators({ indicators }: TechnicalIndicatorsProps) {
       <div className="space-y-5">
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">RSI（14）</span>
+            <span className="flex items-center text-sm text-muted-foreground">
+              RSI（14）
+              <TermTooltip explanation="衡量最近 14 天漲跌力道的指標，0-100 之間。數字太高（超過 70）代表短期漲太快、可能有回檔壓力；太低（低於 30）代表跌太多、可能有反彈機會。" />
+            </span>
             <span className={`text-sm font-semibold ${rsiStatus.color}`}>{rsiStatus.label}</span>
           </div>
           <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -46,7 +50,10 @@ export function TechnicalIndicators({ indicators }: TechnicalIndicatorsProps) {
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">MACD</span>
+            <span className="flex items-center text-sm text-muted-foreground">
+              MACD
+              <TermTooltip explanation="用兩條移動平均線的差距，判斷趨勢方向跟強弱的指標。柱狀圖是正的（偏多）代表短期動能偏強，是負的（偏空）代表動能偏弱，不是直接的買賣訊號，是輔助判斷用的。" />
+            </span>
             <span className={`text-sm font-semibold ${macdStatus.color}`}>{macdStatus.label}</span>
           </div>
           <div className="space-y-1 text-xs">
@@ -66,7 +73,10 @@ export function TechnicalIndicators({ indicators }: TechnicalIndicatorsProps) {
         </div>
 
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">移動平均線</h3>
+          <h3 className="mb-3 flex items-center text-sm font-semibold text-foreground">
+            移動平均線
+            <TermTooltip explanation="最近 N 天收盤價的平均值，用來看趨勢：股價站上均線，通常代表短期偏強；跌破均線，通常代表短期偏弱。20 天約等於 1 個月、200 天約等於 1 年的交易日。" />
+          </h3>
           <div className="space-y-2 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">MA(20)：</span>
