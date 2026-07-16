@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
+import { StockSearch } from './stock-search';
 
 const NAV_LINKS = [
   { href: '/', label: '儀表板' },
@@ -51,6 +52,13 @@ export function DashboardHeader() {
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
+        </div>
+
+        {/* 全站股票搜尋：獨立一整排，不跟 logo/導覽列搶空間，手機、桌面都看得到、
+            用得到——之前整個網站沒有地方能直接打代號或名稱查股票，只能從比較頁
+            的 8 檔預設按鈕選，或手動在網址列打 /stock/代號，這裡補上。 */}
+        <div className="container mx-auto border-t border-border px-4 py-3">
+          <StockSearch />
         </div>
 
         {menuOpen && (

@@ -1271,6 +1271,50 @@ def fetch_market_sentiment() -> Optional[dict]:
 
 
 # ======================================================================
+# 9.6 股票代號／名稱對照表：讓使用者可以用名稱搜尋，不用先知道代號
+# ======================================================================
+# 首頁的搜尋框只能篩選「今天掃描結果」裡的股票（常常是 0 檔或只有幾檔）、
+# 比較頁只能從 8 檔預設權值股按鈕選——整個網站沒有地方能直接打股票代號或
+# 名稱跳到個股詳情頁，這裡補上。
+#
+# 只抓「最新一個交易日」的全市場行情來取代號＋名稱對照，不像 analyze_technical_market
+# 要抓 40 天算均線——名稱幾乎不會變，一天的快照就夠用，便宜很多。用記憶體內
+# 快取（不寫檔案）：重開機會重建一次，成本很低，不值得為了這個再多維護一個
+# 快取檔案。
+_stock_directory_cache: dict = {"date": None, "data": []}
+STOCK_DIRECTORY_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆天找最近一個有資料的交易日
+
+
+def _fetch_stock_directory() -> list:
+    end_date = date.today()
+    for offset in range(STOCK_DIRECTORY_LOOKBACK_DAYS):
+        target_date = end_date - timedelta(days=offset)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            twse_future = executor.submit(twse_data.fetch_daily_market_ohlc, target_date)
+            tpex_future = executor.submit(tpex_data.fetch_daily_market_ohlc, target_date)
+            twse_df = twse_future.result()
+            tpex_df = tpex_future.result()
+        combined = pd.concat([twse_df, tpex_df], ignore_index=True)
+        if not combined.empty:
+            combined = combined.dropna(subset=["stock_id", "stock_name"]).drop_duplicates("stock_id")
+            return combined[["stock_id", "stock_name"]].to_dict(orient="records")
+    logger.warning(f"[股票對照表] 回溯 {STOCK_DIRECTORY_LOOKBACK_DAYS} 天都查不到全市場行情，放棄")
+    return []
+
+
+def get_stock_directory() -> list:
+    """當天第一次呼叫才真的重抓，同一天內重複呼叫直接回傳記憶體內快取。"""
+    today_str = date.today().isoformat()
+    if _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
+        return _stock_directory_cache["data"]
+    data = _fetch_stock_directory()
+    if data:
+        _stock_directory_cache["date"] = today_str
+        _stock_directory_cache["data"] = data
+    return data
+
+
+# ======================================================================
 # 10. API 路由
 # ======================================================================
 @app.post("/api/scan")
@@ -1406,6 +1450,20 @@ def get_market_sentiment(request: Request):
         raise HTTPException(status_code=404, detail="目前查不到台指期資料")
 
     return _json_safe(sentiment)
+
+
+@app.get("/api/stocks/directory")
+def get_stocks_directory():
+    """
+    全市場股票代號＋名稱對照表，前端拿來做「輸入代號或名稱搜尋、選了就跳到
+    個股詳情頁」的全站搜尋框。當天第一次呼叫才會真的對 TWSE/TPEx 發請求
+    （見 get_stock_directory() 的記憶體內快取），之後同一天內都是秒回，
+    不用加頻率限制。
+    """
+    directory = get_stock_directory()
+    if not directory:
+        raise HTTPException(status_code=503, detail="股票清單暫時無法取得，請稍後再試")
+    return {"stocks": directory}
 
 
 class ChatRequest(BaseModel):

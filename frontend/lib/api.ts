@@ -2,6 +2,30 @@
 // 部署到正式環境時，改用環境變數 NEXT_PUBLIC_API_BASE_URL 覆蓋，不需要改程式碼。
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
+// ------------------------------------------------------------------
+// 全站股票搜尋（/api/stocks/directory）
+// ------------------------------------------------------------------
+
+export interface StockDirectoryEntry {
+  stock_id: string;
+  stock_name: string;
+}
+
+/**
+ * 呼叫後端「全市場股票代號＋名稱對照表」API，給全站搜尋框用。後端當天
+ * 第一次呼叫才會真的重抓，之後同一天內都是秒回，所以這裡不用自己另外
+ * 做快取，每次進站直接打一次就好。
+ */
+export async function fetchStockDirectory(): Promise<StockDirectoryEntry[]> {
+  const res = await fetch(`${API_BASE_URL}/api/stocks/directory`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `查詢股票清單失敗（HTTP ${res.status}）`);
+  }
+  const body = await res.json();
+  return body.stocks ?? [];
+}
+
 export interface ScanResultItem {
   stock_id: string;
   stock_name: string;
