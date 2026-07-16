@@ -28,13 +28,22 @@ export function StockSearch() {
   const [directory, setDirectory] = useState<StockDirectoryEntry[]>([]);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // 之前這裡失敗是靜靜吞掉，使用者只會看到「找不到符合的股票」，跟真的
+  // 沒有符合結果長得一模一樣，完全看不出來是搜尋功能本身壞了——實測真的
+  // 遇過一次（後端資料源暫時不穩），完全沒有線索可以判斷是不是網站故障。
+  // 現在區分「清單載入失敗」跟「載入成功但沒有符合結果」這兩種狀態，
+  // 分別顯示不同訊息，並提供重試按鈕。
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
+  const loadDirectory = () => {
+    setLoadFailed(false);
     fetchStockDirectory()
       .then(setDirectory)
-      .catch(() => {
-        // 搜尋清單抓不到就靜靜失敗，不影響網站其他功能；使用者頂多是搜尋框沒結果
-      });
+      .catch(() => setLoadFailed(true));
+  };
+
+  useEffect(() => {
+    loadDirectory();
   }, []);
 
   const matches = useMemo(() => {
@@ -113,9 +122,29 @@ export function StockSearch() {
         </ul>
       )}
 
-      {open && query.trim() && matches.length === 0 && (
+      {open && query.trim() && matches.length === 0 && loadFailed && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover px-3 py-2 text-sm shadow-lg">
+          <p className="text-destructive">搜尋功能暫時無法使用，股票清單載入失敗</p>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={loadDirectory}
+            className="mt-1 text-primary underline-offset-2 hover:underline"
+          >
+            重試
+          </button>
+        </div>
+      )}
+
+      {open && query.trim() && matches.length === 0 && !loadFailed && directory.length > 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover px-3 py-2 text-sm text-muted-foreground shadow-lg">
           找不到符合的股票
+        </div>
+      )}
+
+      {open && query.trim() && matches.length === 0 && !loadFailed && directory.length === 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover px-3 py-2 text-sm text-muted-foreground shadow-lg">
+          股票清單載入中…
         </div>
       )}
     </div>
