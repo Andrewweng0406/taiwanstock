@@ -5,7 +5,18 @@ import { useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { fetchStockDirectory, type StockDirectoryEntry } from '@/lib/api';
 
-const MAX_RESULTS = 8;
+const MAX_RESULTS = 10;
+
+function formatChange(item: StockDirectoryEntry): { text: string; className: string } {
+  if (item.change === null || item.change_percent === null) {
+    return { text: '—', className: 'text-muted-foreground' };
+  }
+  const sign = item.change >= 0 ? '+' : '';
+  return {
+    text: `${sign}${item.change.toFixed(2)}（${sign}${item.change_percent.toFixed(2)}%）`,
+    className: item.change >= 0 ? 'text-primary' : 'text-destructive',
+  };
+}
 
 /**
  * 全站搜尋框：輸入股票代號或名稱，點選（或按 Enter 選到唯一/完全符合的代號）
@@ -76,20 +87,29 @@ export function StockSearch() {
       </div>
 
       {open && matches.length > 0 && (
-        <ul className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-lg">
-          {matches.map((item) => (
-            <li key={item.stock_id}>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()} // 避免先觸發 input 的 onBlur 把清單收起來
-                onClick={() => goToStock(item.stock_id)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
-              >
-                <span className="font-medium">{item.stock_name}</span>
-                <span className="text-muted-foreground">{item.stock_id}</span>
-              </button>
-            </li>
-          ))}
+        <ul className="absolute z-50 mt-1 max-h-96 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+          {matches.map((item) => {
+            const change = formatChange(item);
+            return (
+              <li key={item.stock_id}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()} // 避免先觸發 input 的 onBlur 把清單收起來
+                  onClick={() => goToStock(item.stock_id)}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{item.stock_name}</span>
+                    <span className="block text-xs text-muted-foreground">{item.stock_id}</span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block font-medium">{item.close.toFixed(2)}</span>
+                    <span className={`block text-xs ${change.className}`}>{change.text}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

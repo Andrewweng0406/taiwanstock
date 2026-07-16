@@ -1051,6 +1051,9 @@ def _fetch_stock_capital_info(stock_id: str) -> dict:
     return {"capital": None, "shares_outstanding": None}
 
 
+CHART_DISPLAY_DAYS = 120  # 股價走勢圖顯示的交易日數，約半年，足夠看出中期趨勢又不會太擠
+
+
 def fetch_stock_detail(stock_id: str) -> Optional[dict]:
     """
     查單一股票的完整詳情：價格走勢、技術指標、本益比/淨值比/殖利率、市值、
@@ -1078,9 +1081,27 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
     change_percent = (change / prev_close * 100) if prev_close else 0.0
     volume_avg = price_df["Trading_Volume"].rolling(20).mean().iloc[-1]
 
+    # 股價走勢圖要畫真正的技術線圖（K線+均線疊圖），不是只有收盤價的簡單折線，
+    # 所以這裡要留下開高低收，並且先在完整的 price_df（最多 400 個日曆天、
+    # 約 200 個交易日）上算好 MA5/20/50，再取最後 CHART_DISPLAY_DAYS 筆——
+    # 如果先切再算，最前面幾十筆的均線會因為前面沒有資料而是 None，圖表
+    # 一開始那段會空一塊。
+    price_df["ma5"] = price_df["close"].rolling(5).mean()
+    price_df["ma20"] = price_df["close"].rolling(20).mean()
+    price_df["ma50"] = price_df["close"].rolling(50).mean()
+
     price_history = [
-        {"date": row["date"].strftime("%Y-%m-%d"), "price": float(row["close"])}
-        for _, row in price_df.tail(30).iterrows()
+        {
+            "date": row["date"].strftime("%Y-%m-%d"),
+            "open": float(row["open"]),
+            "high": float(row["max"]),
+            "low": float(row["min"]),
+            "close": float(row["close"]),
+            "ma5": round(float(row["ma5"]), 2) if pd.notna(row["ma5"]) else None,
+            "ma20": round(float(row["ma20"]), 2) if pd.notna(row["ma20"]) else None,
+            "ma50": round(float(row["ma50"]), 2) if pd.notna(row["ma50"]) else None,
+        }
+        for _, row in price_df.tail(CHART_DISPLAY_DAYS).iterrows()
     ]
 
     technical_indicators = _compute_technical_indicators(price_df["close"])
@@ -1277,29 +1298,52 @@ def fetch_market_sentiment() -> Optional[dict]:
 # 比較頁只能從 8 檔預設權值股按鈕選——整個網站沒有地方能直接打股票代號或
 # 名稱跳到個股詳情頁，這裡補上。
 #
-# 只抓「最新一個交易日」的全市場行情來取代號＋名稱對照，不像 analyze_technical_market
-# 要抓 40 天算均線——名稱幾乎不會變，一天的快照就夠用，便宜很多。用記憶體內
-# 快取（不寫檔案）：重開機會重建一次，成本很低，不值得為了這個再多維護一個
-# 快取檔案。
+# 抓最近幾個日曆天（不是只抓一天）的全市場行情，取代號＋名稱之外，也算出
+# 現價跟漲跌幅——使用者在搜尋下拉選單裡除了看名稱代號，也想直接判斷漲跌，
+# 不想還要點進去才知道。只抓一天沒辦法算漲跌（沒有「前一天收盤」可以比較），
+# 所以要抓到至少兩個真正的交易日；不像 analyze_technical_market 要抓 40 天
+# 算均線，成本還是便宜很多。用記憶體內快取（不寫檔案）：重開機會重建一次，
+# 成本很低，不值得為了這個再多維護一個快取檔案。
 _stock_directory_cache: dict = {"date": None, "data": []}
-STOCK_DIRECTORY_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆天找最近一個有資料的交易日
+STOCK_DIRECTORY_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆天找最近兩個有資料的交易日
 
 
 def _fetch_stock_directory() -> list:
-    end_date = date.today()
-    for offset in range(STOCK_DIRECTORY_LOOKBACK_DAYS):
-        target_date = end_date - timedelta(days=offset)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            twse_future = executor.submit(twse_data.fetch_daily_market_ohlc, target_date)
-            tpex_future = executor.submit(tpex_data.fetch_daily_market_ohlc, target_date)
-            twse_df = twse_future.result()
-            tpex_df = tpex_future.result()
-        combined = pd.concat([twse_df, tpex_df], ignore_index=True)
-        if not combined.empty:
-            combined = combined.dropna(subset=["stock_id", "stock_name"]).drop_duplicates("stock_id")
-            return combined[["stock_id", "stock_name"]].to_dict(orient="records")
-    logger.warning(f"[股票對照表] 回溯 {STOCK_DIRECTORY_LOOKBACK_DAYS} 天都查不到全市場行情，放棄")
-    return []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        twse_future = executor.submit(twse_data.fetch_market_ohlc_history, STOCK_DIRECTORY_LOOKBACK_DAYS)
+        tpex_future = executor.submit(tpex_data.fetch_market_ohlc_history, STOCK_DIRECTORY_LOOKBACK_DAYS)
+        twse_df = twse_future.result()
+        tpex_df = tpex_future.result()
+
+    combined = pd.concat([twse_df, tpex_df], ignore_index=True)
+    if combined.empty:
+        logger.warning(f"[股票對照表] 回溯 {STOCK_DIRECTORY_LOOKBACK_DAYS} 天都查不到全市場行情，放棄")
+        return []
+
+    combined = combined.dropna(subset=["stock_id", "stock_name", "close"])
+    combined["date"] = pd.to_datetime(combined["date"])
+    combined = combined.sort_values(["stock_id", "date"]).drop_duplicates(["stock_id", "date"], keep="last")
+
+    results = []
+    for stock_id, group in combined.groupby("stock_id"):
+        latest = group.iloc[-1]
+        close = float(latest["close"])
+        change = change_percent = None
+        if len(group) > 1:
+            prev_close = float(group.iloc[-2]["close"])
+            if prev_close:
+                change = round(close - prev_close, 2)
+                change_percent = round((close - prev_close) / prev_close * 100, 2)
+        results.append(
+            {
+                "stock_id": stock_id,
+                "stock_name": latest["stock_name"],
+                "close": close,
+                "change": change,
+                "change_percent": change_percent,
+            }
+        )
+    return results
 
 
 def get_stock_directory() -> list:
@@ -1463,7 +1507,7 @@ def get_stocks_directory():
     directory = get_stock_directory()
     if not directory:
         raise HTTPException(status_code=503, detail="股票清單暫時無法取得，請稍後再試")
-    return {"stocks": directory}
+    return _json_safe({"stocks": directory})
 
 
 class ChatRequest(BaseModel):

@@ -9,7 +9,8 @@ import { TechnicalIndicators as TechnicalIndicatorsComponent } from '@/component
 import { RevenueTrend } from '@/components/stock/revenue-trend';
 import { InstitutionalRecent } from '@/components/stock/institutional-recent';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Star } from 'lucide-react';
+import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
 
 export default function StockDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -17,6 +18,11 @@ export default function StockDetailPage({ params }: { params: Promise<{ id: stri
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [watched, setWatched] = useState(false);
+
+  useEffect(() => {
+    setWatched(isInWatchlist(id));
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +95,17 @@ export default function StockDetailPage({ params }: { params: Promise<{ id: stri
           <div>
             <div className="flex items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-foreground">{stock.stock_name}</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-3xl font-bold text-foreground">{stock.stock_name}</h1>
+                  <button
+                    type="button"
+                    aria-label={watched ? '從自選股移除' : '加入自選股'}
+                    onClick={() => setWatched(toggleWatchlist(stock.stock_id))}
+                    className="text-muted-foreground hover:text-amber-500"
+                  >
+                    <Star className={`h-6 w-6 ${watched ? 'fill-amber-400 text-amber-500' : ''}`} />
+                  </button>
+                </div>
                 <p className="text-muted-foreground">
                   {stock.stock_id}
                   {stock.industry ? ` · ${stock.industry}` : ''}
@@ -117,7 +133,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <div className="rounded-lg border border-border bg-card p-6">
-            <h2 className="mb-4 text-lg font-semibold text-foreground">股價走勢（近 30 天）</h2>
+            <h2 className="mb-4 text-lg font-semibold text-foreground">股價走勢（近 120 個交易日，K線＋均線）</h2>
             <StockChart data={stock.price_history} />
           </div>
           <RevenueTrend data={stock.revenue_trend} />

@@ -9,6 +9,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 export interface StockDirectoryEntry {
   stock_id: string;
   stock_name: string;
+  close: number;
+  change: number | null;
+  change_percent: number | null;
 }
 
 /**
@@ -171,7 +174,13 @@ export async function runBacktest(): Promise<BacktestOutcome> {
 
 export interface PricePoint {
   date: string;
-  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  ma5: number | null;
+  ma20: number | null;
+  ma50: number | null;
 }
 
 export interface TechnicalIndicators {
