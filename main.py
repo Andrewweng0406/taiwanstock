@@ -1188,27 +1188,47 @@ MARKET_SENTIMENT_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日�
 def fetch_market_sentiment() -> Optional[dict]:
     """
     找最近一個有資料的交易日，回傳台指期近月行情 + 三大法人期貨未平倉。
-    連續 MARKET_SENTIMENT_LOOKBACK_DAYS 天都查不到資料（例如連假、TAIFEX
+    連續 MARKET_SENTIMENT_LOOKBACK_DAYS 天都查不到任何資料（例如連假、TAIFEX
     服務異常）就回傳 None，呼叫端會把整張卡片藏起來，不會顯示殘缺資料。
+
+    期貨行情跟三大法人未平倉是兩份獨立發布的報表，實測發現發布時間不同步——
+    早上查詢時，期貨行情（近月合約）可能已經有當天資料（因為台指期有夜盤，
+    「今天」的行情其實大部分是前一晚夜盤就交易完成的），但三大法人未平倉
+    報表通常要等當天收盤結算後才會產生，同一時間點查詢，兩份報表「最近
+    一個有資料的交易日」可能不是同一天。這裡分開回溯，各自找各自最新的，
+    不能綁在同一個迴圈裡，不然只要未平倉報表還沒發布，會連已經有的期貨
+    行情都一起被擋住不顯示。
     """
     end_date = date.today()
+
+    futures = None
+    for offset in range(MARKET_SENTIMENT_LOOKBACK_DAYS):
+        futures = taifex_data.fetch_futures_daily(end_date - timedelta(days=offset))
+        if futures is not None:
+            break
+    if futures is None:
+        logger.warning(f"[大盤情緒] 回溯 {MARKET_SENTIMENT_LOOKBACK_DAYS} 天都查不到台指期行情，放棄")
+        return None
+
+    positions = None
+    positions_date = None
     for offset in range(MARKET_SENTIMENT_LOOKBACK_DAYS):
         target_date = end_date - timedelta(days=offset)
-        futures = taifex_data.fetch_futures_daily(target_date)
-        if futures is None:
-            continue
-        # 拆成三個具名欄位（而不是直接回傳 taifex_data 那個「身份別字串當 key」的 dict），
-        # 前端型別才好定義，也不用另外處理混在同一個 dict 裡的 "date" 欄位。
         positions = taifex_data.fetch_institutional_futures_positions(target_date)
-        return {
-            "trading_date": futures["date"],
-            "futures": futures,
-            "dealer_position": positions.get(taifex_data.DEALER_NAME) if positions else None,
-            "trust_position": positions.get(taifex_data.INVESTMENT_TRUST_NAME) if positions else None,
-            "foreign_position": positions.get(taifex_data.FOREIGN_INVESTOR_NAME) if positions else None,
-        }
-    logger.warning(f"[大盤情緒] 回溯 {MARKET_SENTIMENT_LOOKBACK_DAYS} 天都查不到台指期資料，放棄")
-    return None
+        if positions is not None:
+            positions_date = target_date.isoformat()
+            break
+
+    # 拆成三個具名欄位（而不是直接回傳 taifex_data 那個「身份別字串當 key」的 dict），
+    # 前端型別才好定義，也不用另外處理混在同一個 dict 裡的 "date" 欄位。
+    return {
+        "trading_date": futures["date"],
+        "futures": futures,
+        "positions_date": positions_date,  # 可能跟 trading_date 不同天，見上方說明；前端要各自標示
+        "dealer_position": positions.get(taifex_data.DEALER_NAME) if positions else None,
+        "trust_position": positions.get(taifex_data.INVESTMENT_TRUST_NAME) if positions else None,
+        "foreign_position": positions.get(taifex_data.FOREIGN_INVESTOR_NAME) if positions else None,
+    }
 
 
 # ======================================================================

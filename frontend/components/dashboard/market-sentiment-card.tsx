@@ -93,6 +93,11 @@ export function MarketSentimentCard() {
               {positionLabel(foreign_position?.net_position ?? null)}
             </span>
           </div>
+          {sentiment.positions_date && sentiment.positions_date !== sentiment.trading_date && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              （法人未平倉資料截至 {sentiment.positions_date}，跟期貨行情不是同一天發布）
+            </p>
+          )}
         </div>
       </div>
     </div>

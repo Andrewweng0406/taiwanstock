@@ -246,6 +246,8 @@ export interface InstitutionalFuturesPosition {
 export interface MarketSentiment {
   trading_date: string;
   futures: FuturesQuote;
+  /** 三大法人未平倉報表的資料日期，可能跟 trading_date 不同天（兩份報表發布時間不同步） */
+  positions_date: string | null;
   dealer_position: InstitutionalFuturesPosition | null;
   trust_position: InstitutionalFuturesPosition | null;
   foreign_position: InstitutionalFuturesPosition | null;
