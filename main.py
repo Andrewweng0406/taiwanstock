@@ -1315,8 +1315,18 @@ STOCK_DIRECTORY_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆
 STOCK_DIRECTORY_TRADING_DAYS_NEEDED = 2  # 算漲跌只需要「今天」跟「前一天」兩個交易日
 
 
-def _fetch_stock_directory() -> list:
+def _fetch_stock_directory() -> tuple:
+    """
+    回傳 (對照表, 上市上櫃是否都至少抓到一天資料)。第二個值給呼叫端決定
+    要不要寫進快取——實測過一次 TPEx 暫時性失敗、只有 TWSE 抓到資料時，
+    如果照樣把「只有上市、沒有上櫃」的不完整結果快取一整天，之後 TPEx
+    恢復正常了也沒用，因為當天內都直接回傳那份不完整的舊快取，使用者
+    搜尋上櫃股票會一直找不到。只有兩邊都抓到才快取，其中一邊暫時失敗時
+    寧可這次回傳不完整結果，也讓下一次請求有機會重新抓一次、自動恢復。
+    """
     frames = []
+    twse_ok = False
+    tpex_ok = False
     end_date = date.today()
     for offset in range(STOCK_DIRECTORY_LOOKBACK_DAYS):
         if len(frames) >= STOCK_DIRECTORY_TRADING_DAYS_NEEDED:
@@ -1327,13 +1337,17 @@ def _fetch_stock_directory() -> list:
             tpex_future = executor.submit(tpex_data.fetch_daily_market_ohlc, target_date)
             twse_df = twse_future.result()
             tpex_df = tpex_future.result()
+        if not twse_df.empty:
+            twse_ok = True
+        if not tpex_df.empty:
+            tpex_ok = True
         day_df = pd.concat([twse_df, tpex_df], ignore_index=True)
         if not day_df.empty:
             frames.append(day_df)
 
     if not frames:
         logger.warning(f"[股票對照表] 回溯 {STOCK_DIRECTORY_LOOKBACK_DAYS} 天都查不到全市場行情，放棄")
-        return []
+        return [], False
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.dropna(subset=["stock_id", "stock_name", "close"])
@@ -1359,29 +1373,37 @@ def _fetch_stock_directory() -> list:
                 "change_percent": change_percent,
             }
         )
-    return results
+    return results, (twse_ok and tpex_ok)
 
 
-def get_stock_directory() -> list:
+def get_stock_directory(force: bool = False) -> list:
     """
     當天第一次呼叫才真的重抓，同一天內重複呼叫直接回傳記憶體內快取。用鎖
     確保「快取沒中」時，短時間內湧進來的好幾個請求只有一個會真的觸發重建，
     其他請求排隊等它做完直接沿用結果，不會各自獨立對 TWSE/TPEx 開一輪
     請求、疊加負載（見上方章節開頭的說明）。
+
+    force=True 略過快取直接重抓，給 /api/stocks/directory?force=true 用：
+    上市或上櫃其中一邊暫時失敗時，_fetch_stock_directory() 不會把不完整
+    結果寫進快取，但如果剛好那次呼叫拿到的就是那份沒被快取的不完整結果
+    （因為兩個市場都失敗、frames 是空的情況除外），使用者不會想等到隔天
+    快取自然過期，force 讓我們（或之後排查問題時）能手動立刻重試一次。
     """
     today_str = date.today().isoformat()
-    if _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
+    if not force and _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
         return _stock_directory_cache["data"]
 
     with _stock_directory_lock:
         # 拿到鎖之後再檢查一次快取：如果剛剛是排隊等別人重建，這時候多半
         # 已經有新鮮的快取可以用了，不用自己再重抓一次。
-        if _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
+        if not force and _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
             return _stock_directory_cache["data"]
-        data = _fetch_stock_directory()
-        if data:
+        data, complete = _fetch_stock_directory()
+        if data and complete:
             _stock_directory_cache["date"] = today_str
             _stock_directory_cache["data"] = data
+        elif data:
+            logger.warning(f"[股票對照表] 只抓到部分市場資料（{len(data)} 檔），不寫入快取，下次請求會重新嘗試")
         return data
 
 
@@ -1524,14 +1546,17 @@ def get_market_sentiment(request: Request):
 
 
 @app.get("/api/stocks/directory")
-def get_stocks_directory():
+def get_stocks_directory(force: bool = False):
     """
     全市場股票代號＋名稱對照表，前端拿來做「輸入代號或名稱搜尋、選了就跳到
     個股詳情頁」的全站搜尋框。當天第一次呼叫才會真的對 TWSE/TPEx 發請求
     （見 get_stock_directory() 的記憶體內快取），之後同一天內都是秒回，
     不用加頻率限制。
+
+    ?force=true 略過快取強制重抓，只有上市或上櫃其中一邊暫時失敗、想手動
+    重試時才需要用（正常前端搜尋框不會帶這個參數）。
     """
-    directory = get_stock_directory()
+    directory = get_stock_directory(force=force)
     if not directory:
         raise HTTPException(status_code=503, detail="股票清單暫時無法取得，請稍後再試")
     return _json_safe({"stocks": directory})
