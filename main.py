@@ -614,11 +614,50 @@ def _scheduled_scan_job() -> None:
         heavy_task_lock.release()
 
 
+# ======================================================================
+# 7.7 排程：收盤後自動記錄一次 Codex 的鎖定參數紙上交易訊號
+# ======================================================================
+# 這是 Codex 的研究工具（見 STRATEGY_RESEARCH_REPORT.md 第9節、
+# locked_strategy_paper_trade.py），不是正式站選股邏輯的一部分——只是把
+# 「用 point-in-time 驗證過的候選參數（量能1.5x + 2ATR停損等）今天會選到
+# 哪些股票」記錄到本地的 paper_trade_ledger.jsonl，之後追蹤這些訊號實際
+# 表現，驗證候選策略在完全沒看過的新資料上是否真的站得住腳。
+#
+# 原本要靠 Codex 自己記得手動執行，容易漏掉某幾天，導致紙上交易樣本有
+# 缺口；改成排程自動跑，確保報告要求的「累積 3-6 個月新訊號」不會因為
+# 忘記手動執行而中斷。
+#
+# 排在收盤掃描（14:30）之後 15 分鐘（14:45）執行，用 from_cache=True
+# 直接讀當天已經掃好的正式快取，不用再對 TWSE/TPEx 重新發一次全市場請求
+# ——省時間，也不會讓兩個排程同時打對方伺服器提高被限流的風險。
+#
+# main.py 內部才 import locked_strategy_paper_trade，是刻意延後：那支腳本
+# 自己也會 `import main`，如果在這裡的模組最上方就 import，main.py 都還
+# 沒載入完成就會造成循環匯入錯誤，延後到函式實際執行時才 import 就沒事
+# （那時候 main 這個模組早就在 sys.modules 裡載入完成了）。
+def _scheduled_paper_trade_job() -> None:
+    """收盤後自動記錄一次 Codex 鎖定參數的紙上交易訊號；只寫本地 ledger，不影響正式站任何邏輯。"""
+    try:
+        import locked_strategy_paper_trade
+
+        logger.info("[紙上交易] 開始記錄鎖定參數訊號")
+        result = locked_strategy_paper_trade.run(from_cache=True)
+        logger.info(f"[紙上交易] 記錄完成，新增 {result['new_records_appended']} 筆訊號")
+    except Exception as e:
+        logger.exception(f"[紙上交易] 記錄失敗：{e}")
+
+
 _scan_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
 _scan_scheduler.add_job(
     _scheduled_scan_job,
     trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=30, timezone="Asia/Taipei"),
     id="post_market_scan",
+    replace_existing=True,
+)
+_scan_scheduler.add_job(
+    _scheduled_paper_trade_job,
+    trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=45, timezone="Asia/Taipei"),
+    id="post_market_paper_trade",
     replace_existing=True,
 )
 _scan_scheduler.start()
