@@ -77,6 +77,8 @@ from typing import Optional
 
 import pandas as pd
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -577,6 +579,53 @@ def _save_scan_cache(scan_time: str, trading_date: str, results: list) -> None:
         tmp_path.replace(SCAN_CACHE_FILE)  # 原子性覆蓋，不會有寫一半的中間狀態
     except Exception as e:
         logger.warning(f"[快取] 寫入掃描快取失敗，不影響本次回傳結果：{e}")
+
+
+# ======================================================================
+# 7.6 排程：收盤後自動掃描一次，讓快取在使用者打開網站前就是熱的
+# ======================================================================
+# 為什麼是收盤後、不是開盤時？實測過：台灣時間早上開盤前直接問證交所「今天」
+# 的收盤行情表，回傳「沒有符合條件的資料」——這幾支免費端點是收盤後才會產生
+# 當天的完整報表，不是逐筆即時更新，開盤當下掃跟收盤前掃拿到的都還是前一個
+# 交易日的舊資料，早跑沒有意義。時間選在收盤（13:30）後一小時（14:30），
+# 給證交所/櫃買中心足夠時間把報表整理發布完成。
+#
+# 14:30 台灣時間（UTC+8）換算成 UTC 是當天 06:30，跟台灣當天日期同一天，
+# 所以就算 Railway 容器用 UTC 系統時間，_save_scan_cache() 裡的
+# date.today() 算出來的 scan_date 也不會跨日出錯；但這個排程時間如果之後
+# 改到台灣時間凌晨 0-8 點，UTC 那邊會是前一天，屆時要另外處理時區換算，
+# 不能直接假設 date.today() 就是台灣的今天。
+def _scheduled_scan_job() -> None:
+    """收盤後自動掃描一次；跟 API 路由共用同一把鎖，若當下有人正在手動掃描/回測就跳過，不搶鎖。"""
+    acquired = heavy_task_lock.acquire(blocking=False)
+    if not acquired:
+        logger.info("[排程] 收盤後自動掃描時間到，但目前有掃描/回測正在執行，本次跳過")
+        return
+    try:
+        logger.info("[排程] 開始收盤後自動掃描")
+        trading_date, results = run_full_scan()
+        scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _save_scan_cache(scan_time, trading_date, results)
+        logger.info(f"[排程] 收盤後自動掃描完成，交易日 {trading_date}，符合條件 {len(results)} 檔")
+    except Exception as e:
+        logger.exception(f"[排程] 收盤後自動掃描失敗：{e}")
+    finally:
+        heavy_task_lock.release()
+
+
+_scan_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
+_scan_scheduler.add_job(
+    _scheduled_scan_job,
+    trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=30, timezone="Asia/Taipei"),
+    id="post_market_scan",
+    replace_existing=True,
+)
+_scan_scheduler.start()
+
+
+@app.on_event("shutdown")
+def _shutdown_scheduler() -> None:
+    _scan_scheduler.shutdown(wait=False)
 
 
 # ======================================================================
