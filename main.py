@@ -1298,28 +1298,44 @@ def fetch_market_sentiment() -> Optional[dict]:
 # 比較頁只能從 8 檔預設權值股按鈕選——整個網站沒有地方能直接打股票代號或
 # 名稱跳到個股詳情頁，這裡補上。
 #
-# 抓最近幾個日曆天（不是只抓一天）的全市場行情，取代號＋名稱之外，也算出
-# 現價跟漲跌幅——使用者在搜尋下拉選單裡除了看名稱代號，也想直接判斷漲跌，
-# 不想還要點進去才知道。只抓一天沒辦法算漲跌（沒有「前一天收盤」可以比較），
-# 所以要抓到至少兩個真正的交易日；不像 analyze_technical_market 要抓 40 天
-# 算均線，成本還是便宜很多。用記憶體內快取（不寫檔案）：重開機會重建一次，
-# 成本很低，不值得為了這個再多維護一個快取檔案。
+# 只需要「最近兩個真正有交易的交易日」就能算現價跟漲跌，不用像最初版本
+# 那樣不管用不用得到都固定抓 10 個日曆天的完整區間——那個版本在 TPEx
+# 不穩定（見 tpex_data.py 開頭已經記錄過好幾次的暫時性 520/連線錯誤/403）
+# 時，逐日重試疊加起來會拖很久，正式站實測過一次卡超過 60 秒沒回應。
+# 改成逐日回溯、抓到兩個有資料的交易日就停手，正常情況下只要抓 2-3 天，
+# 比固定抓 10 天快很多，也不會對 TPEx 發不需要的請求。
+#
+# 另外加一把鎖：同一時間若有好幾個請求剛好都撞上「快取沒中」，原本會各自
+# 獨立觸發一次完整重建，等於同時對 TPEx 開好幾組平行請求，反而更容易被
+# 判定成異常流量。有鎖之後，只有第一個請求會真的去抓，其他請求排隊等它
+# 做完，直接沿用剛建好的快取，不會疊加負載。
 _stock_directory_cache: dict = {"date": None, "data": []}
+_stock_directory_lock = threading.Lock()
 STOCK_DIRECTORY_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆天找最近兩個有資料的交易日
+STOCK_DIRECTORY_TRADING_DAYS_NEEDED = 2  # 算漲跌只需要「今天」跟「前一天」兩個交易日
 
 
 def _fetch_stock_directory() -> list:
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        twse_future = executor.submit(twse_data.fetch_market_ohlc_history, STOCK_DIRECTORY_LOOKBACK_DAYS)
-        tpex_future = executor.submit(tpex_data.fetch_market_ohlc_history, STOCK_DIRECTORY_LOOKBACK_DAYS)
-        twse_df = twse_future.result()
-        tpex_df = tpex_future.result()
+    frames = []
+    end_date = date.today()
+    for offset in range(STOCK_DIRECTORY_LOOKBACK_DAYS):
+        if len(frames) >= STOCK_DIRECTORY_TRADING_DAYS_NEEDED:
+            break
+        target_date = end_date - timedelta(days=offset)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            twse_future = executor.submit(twse_data.fetch_daily_market_ohlc, target_date)
+            tpex_future = executor.submit(tpex_data.fetch_daily_market_ohlc, target_date)
+            twse_df = twse_future.result()
+            tpex_df = tpex_future.result()
+        day_df = pd.concat([twse_df, tpex_df], ignore_index=True)
+        if not day_df.empty:
+            frames.append(day_df)
 
-    combined = pd.concat([twse_df, tpex_df], ignore_index=True)
-    if combined.empty:
+    if not frames:
         logger.warning(f"[股票對照表] 回溯 {STOCK_DIRECTORY_LOOKBACK_DAYS} 天都查不到全市場行情，放棄")
         return []
 
+    combined = pd.concat(frames, ignore_index=True)
     combined = combined.dropna(subset=["stock_id", "stock_name", "close"])
     combined["date"] = pd.to_datetime(combined["date"])
     combined = combined.sort_values(["stock_id", "date"]).drop_duplicates(["stock_id", "date"], keep="last")
@@ -1347,15 +1363,26 @@ def _fetch_stock_directory() -> list:
 
 
 def get_stock_directory() -> list:
-    """當天第一次呼叫才真的重抓，同一天內重複呼叫直接回傳記憶體內快取。"""
+    """
+    當天第一次呼叫才真的重抓，同一天內重複呼叫直接回傳記憶體內快取。用鎖
+    確保「快取沒中」時，短時間內湧進來的好幾個請求只有一個會真的觸發重建，
+    其他請求排隊等它做完直接沿用結果，不會各自獨立對 TWSE/TPEx 開一輪
+    請求、疊加負載（見上方章節開頭的說明）。
+    """
     today_str = date.today().isoformat()
     if _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
         return _stock_directory_cache["data"]
-    data = _fetch_stock_directory()
-    if data:
-        _stock_directory_cache["date"] = today_str
-        _stock_directory_cache["data"] = data
-    return data
+
+    with _stock_directory_lock:
+        # 拿到鎖之後再檢查一次快取：如果剛剛是排隊等別人重建，這時候多半
+        # 已經有新鮮的快取可以用了，不用自己再重抓一次。
+        if _stock_directory_cache["date"] == today_str and _stock_directory_cache["data"]:
+            return _stock_directory_cache["data"]
+        data = _fetch_stock_directory()
+        if data:
+            _stock_directory_cache["date"] = today_str
+            _stock_directory_cache["data"] = data
+        return data
 
 
 # ======================================================================
