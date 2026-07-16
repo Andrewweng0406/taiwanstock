@@ -218,6 +218,62 @@ export async function fetchStockDetail(stockId: string): Promise<StockDetail | n
 }
 
 // ------------------------------------------------------------------
+// 大盤情緒（/api/market-sentiment）
+// ------------------------------------------------------------------
+
+export interface FuturesQuote {
+  contract: string;
+  expiry_month: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  change: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  settlement_price: number | null;
+  open_interest: number | null;
+  date: string;
+}
+
+export interface InstitutionalFuturesPosition {
+  long_position: number | null;
+  short_position: number | null;
+  net_position: number | null;
+  net_position_amount: number | null;
+}
+
+export interface MarketSentiment {
+  trading_date: string;
+  futures: FuturesQuote;
+  dealer_position: InstitutionalFuturesPosition | null;
+  trust_position: InstitutionalFuturesPosition | null;
+  foreign_position: InstitutionalFuturesPosition | null;
+}
+
+/**
+ * 呼叫後端「大盤情緒」API：台指期近月行情 + 三大法人期貨未平倉（自營商/投信/外資）。
+ * 跟現貨資料一樣是收盤後才有的資料，不是即時盤中報價，回應裡的 trading_date
+ * 就是實際反映哪一天的資料，前端要照樣清楚標示，不能讓人誤會成即時行情。
+ * - HTTP 404：查不到資料（例如 TAIFEX 服務異常、連續假期），回傳 null 讓
+ *   呼叫端把整張卡片藏起來，不顯示殘缺資料。
+ */
+export async function fetchMarketSentiment(): Promise<MarketSentiment | null> {
+  const res = await fetch(`${API_BASE_URL}/api/market-sentiment`);
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `查詢大盤情緒失敗（HTTP ${res.status}）`);
+  }
+
+  return res.json();
+}
+
+// ------------------------------------------------------------------
 // AI 選股助理（/api/chat）
 // ------------------------------------------------------------------
 

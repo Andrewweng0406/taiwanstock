@@ -86,6 +86,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import chat_assistant
+import taifex_data
 import tpex_data
 import twse_data
 
@@ -1175,6 +1176,42 @@ def fetch_stock_detail(stock_id: str) -> Optional[dict]:
 
 
 # ======================================================================
+# 9.5 大盤情緒：台指期近月行情 + 三大法人期貨未平倉（首頁小卡片用）
+# ======================================================================
+# 這是全新的維度（大盤整體氣氛），不是個股選股的第四個條件——三大生態選股
+# 的邏輯完全沒變，這裡只是額外提供「今天大盤法人怎麼佈局」的參考資訊。
+# 跟現貨資料一樣，這仍然是收盤後才有的資料，不是即時盤中報價（見
+# taifex_data.py 開頭說明），一樣要老實揭露資料日期，不能讓人誤會成即時。
+MARKET_SENTIMENT_LOOKBACK_DAYS = 10  # 遇到連假時，最多回溯幾個日曆天找最近一個有資料的交易日
+
+
+def fetch_market_sentiment() -> Optional[dict]:
+    """
+    找最近一個有資料的交易日，回傳台指期近月行情 + 三大法人期貨未平倉。
+    連續 MARKET_SENTIMENT_LOOKBACK_DAYS 天都查不到資料（例如連假、TAIFEX
+    服務異常）就回傳 None，呼叫端會把整張卡片藏起來，不會顯示殘缺資料。
+    """
+    end_date = date.today()
+    for offset in range(MARKET_SENTIMENT_LOOKBACK_DAYS):
+        target_date = end_date - timedelta(days=offset)
+        futures = taifex_data.fetch_futures_daily(target_date)
+        if futures is None:
+            continue
+        # 拆成三個具名欄位（而不是直接回傳 taifex_data 那個「身份別字串當 key」的 dict），
+        # 前端型別才好定義，也不用另外處理混在同一個 dict 裡的 "date" 欄位。
+        positions = taifex_data.fetch_institutional_futures_positions(target_date)
+        return {
+            "trading_date": futures["date"],
+            "futures": futures,
+            "dealer_position": positions.get(taifex_data.DEALER_NAME) if positions else None,
+            "trust_position": positions.get(taifex_data.INVESTMENT_TRUST_NAME) if positions else None,
+            "foreign_position": positions.get(taifex_data.FOREIGN_INVESTOR_NAME) if positions else None,
+        }
+    logger.warning(f"[大盤情緒] 回溯 {MARKET_SENTIMENT_LOOKBACK_DAYS} 天都查不到台指期資料，放棄")
+    return None
+
+
+# ======================================================================
 # 10. API 路由
 # ======================================================================
 @app.post("/api/scan")
@@ -1289,6 +1326,27 @@ def get_stock_detail(stock_id: str, request: Request):
         raise HTTPException(status_code=404, detail=f"找不到股票代號 {stock_id} 的資料")
 
     return detail
+
+
+@app.get("/api/market-sentiment")
+def get_market_sentiment(request: Request):
+    """
+    大盤情緒卡片用的 API：台指期近月行情 + 三大法人期貨未平倉。跟 /api/stock/{id}
+    一樣不用搶 heavy_task_lock（只是兩次輕量查詢，幾秒內回應）。
+
+    每個 IP 每分鐘最多 30 次，跟 /api/stock/{id} 用同一個頻率限制邏輯，理由相同。
+    """
+    _enforce_rate_limit(request, "market_sentiment", max_requests=30, window_seconds=60)
+    try:
+        sentiment = fetch_market_sentiment()
+    except Exception as e:
+        logger.exception("查詢大盤情緒發生未預期錯誤")
+        raise HTTPException(status_code=500, detail=f"查詢大盤情緒時發生錯誤：{e}")
+
+    if sentiment is None:
+        raise HTTPException(status_code=404, detail="目前查不到台指期資料")
+
+    return _json_safe(sentiment)
 
 
 class ChatRequest(BaseModel):

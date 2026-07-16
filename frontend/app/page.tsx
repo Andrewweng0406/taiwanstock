@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { DashboardHeader } from '@/components/dashboard/header';
 import { StockScreener } from '@/components/dashboard/stock-screener';
 import { KeyMetrics } from '@/components/dashboard/key-metrics';
+import { MarketSentimentCard } from '@/components/dashboard/market-sentiment-card';
 import { ChatWidget } from '@/components/chat/chat-widget';
 import { Button } from '@/components/ui/button';
 import { scanStocks, type ScanResultItem } from '@/lib/api';
@@ -81,6 +82,10 @@ export default function Page() {
             {errorMessage}
           </div>
         )}
+
+        <div className="mb-8">
+          <MarketSentimentCard />
+        </div>
 
         <KeyMetrics results={results} />
         <div className="mt-8">
