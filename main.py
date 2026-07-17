@@ -86,6 +86,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import chat_assistant
+import material_news
 import taifex_data
 import tpex_data
 import twse_data
@@ -120,6 +121,10 @@ INVESTMENT_TRUST_NAME = "Investment_Trust"  # FinMind 三大法人資料集中�
 # 之後同一天內的請求直接讀檔秒回，不用重新對 TWSE/TPEx 發出上百次請求。
 # 這個檔案是執行期產生的資料、不是原始碼，已加進 .gitignore。
 SCAN_CACHE_FILE = Path(__file__).parent / "latest_scan_result.json"
+
+# 重大訊息利多利空分類結果的本地快取檔案，理由跟 SCAN_CACHE_FILE 一樣：
+# 分類要呼叫 AI API（有成本、也要等回應），同一天內不用重複算。
+MATERIAL_NEWS_CACHE_FILE = Path(__file__).parent / "latest_material_news.json"
 
 # 三大生態選股的門檻常數。即時掃描（run_full_scan，資料來源 TWSE）跟回測
 # （run_backtest，資料來源 FinMind）共用這幾個常數，確保回測驗證的是「跟即時
@@ -647,6 +652,16 @@ def _scheduled_paper_trade_job() -> None:
         logger.exception(f"[紙上交易] 記錄失敗：{e}")
 
 
+def _scheduled_material_news_job() -> None:
+    """收盤後自動抓一次重大訊息公告並用 AI 分類，讓快取在使用者打開網站前就是熱的（見 9.7 節說明）。"""
+    try:
+        logger.info("[重大訊息] 開始排程抓取與分類")
+        result = get_material_news(force=True)
+        logger.info(f"[重大訊息] 排程完成，共 {len(result.get('data', []))} 則")
+    except Exception as e:
+        logger.exception(f"[重大訊息] 排程失敗：{e}")
+
+
 _scan_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
 _scan_scheduler.add_job(
     _scheduled_scan_job,
@@ -658,6 +673,12 @@ _scan_scheduler.add_job(
     _scheduled_paper_trade_job,
     trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=45, timezone="Asia/Taipei"),
     id="post_market_paper_trade",
+    replace_existing=True,
+)
+_scan_scheduler.add_job(
+    _scheduled_material_news_job,
+    trigger=CronTrigger(day_of_week="mon-fri", hour=14, minute=50, timezone="Asia/Taipei"),
+    id="post_market_material_news",
     replace_existing=True,
 )
 _scan_scheduler.start()
@@ -1408,6 +1429,83 @@ def get_stock_directory(force: bool = False) -> list:
 
 
 # ======================================================================
+# 9.7 重大訊息利多利空看板：上市櫃公司官方公告 + AI 分類（首頁卡片用）
+# ======================================================================
+# 為什麼用「重大訊息公告」而不是「新聞」：主要財經新聞網站（Goodinfo、
+# Yahoo股市、經濟日報、自由時報…）的 robots.txt 都明確擋掉 AI 爬蟲，部分
+# 甚至點名 ClaudeBot／anthropic-ai，這是網站主明確表態不歡迎，不會去繞過。
+# 重大訊息公告是 TWSE／TPEx 官方開放資料，公司依法必須公告的第一手事實，
+# 沒有這個問題，內容也比媒體加工過的新聞更原始可信。分類邏輯見
+# material_news.py（AI 分類，沒設定金鑰就退回規則式關鍵字分類）。
+#
+# 用本地檔案快取（不是記憶體內快取）：這支要呼叫 AI API 分類上百則公告，
+# 比股票對照表貴很多（有金鑰額度成本），寫進檔案才能撐過 Railway 重新
+# 部署／重啟，不會每次重啟就把今天已經分類好的結果丟掉、重新花一次額度。
+_material_news_lock = threading.Lock()
+
+
+def _load_material_news_cache() -> Optional[dict]:
+    if not MATERIAL_NEWS_CACHE_FILE.exists():
+        return None
+    try:
+        with open(MATERIAL_NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+        if cache.get("cache_date") != date.today().isoformat():
+            return None
+        return cache
+    except Exception as e:
+        logger.warning(f"[重大訊息] 讀取快取失敗，視為沒有快取：{e}")
+        return None
+
+
+def _save_material_news_cache(items: list) -> None:
+    cache = {
+        "cache_date": date.today().isoformat(),
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data": items,
+    }
+    tmp_path = MATERIAL_NEWS_CACHE_FILE.with_suffix(".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+        tmp_path.replace(MATERIAL_NEWS_CACHE_FILE)
+    except Exception as e:
+        logger.warning(f"[重大訊息] 寫入快取失敗，不影響本次回傳結果：{e}")
+
+
+def get_material_news(force: bool = False) -> dict:
+    """
+    當天第一次呼叫才真的重抓＋重新分類（要花 AI 額度，比股票對照表貴），
+    同一天內重複呼叫直接讀本地檔案快取。用鎖避免短時間內多個請求同時
+    觸發重複分類、疊加 AI API 呼叫成本。
+    """
+    if not force:
+        cached = _load_material_news_cache()
+        if cached is not None:
+            return cached
+
+    with _material_news_lock:
+        if not force:
+            cached = _load_material_news_cache()
+            if cached is not None:
+                return cached
+
+        raw_items = material_news.fetch_material_news()
+        if not raw_items:
+            logger.warning("[重大訊息] 抓不到任何公告，放棄本次分類")
+            return {"cache_date": date.today().isoformat(), "generated_at": None, "data": []}
+
+        classified = material_news.classify_material_news(raw_items)
+        classified.sort(key=lambda x: x.get("importance", 0), reverse=True)
+        _save_material_news_cache(classified)
+        return _load_material_news_cache() or {
+            "cache_date": date.today().isoformat(),
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": classified,
+        }
+
+
+# ======================================================================
 # 10. API 路由
 # ======================================================================
 @app.post("/api/scan")
@@ -1560,6 +1658,26 @@ def get_stocks_directory(force: bool = False):
     if not directory:
         raise HTTPException(status_code=503, detail="股票清單暫時無法取得，請稍後再試")
     return _json_safe({"stocks": directory})
+
+
+@app.get("/api/material-news")
+def get_material_news_endpoint(request: Request, force: bool = False):
+    """
+    上市櫃公司重大訊息公告，已用 AI 分類利多／利空／重要程度。資料源是
+    TWSE／TPEx 官方開放資料，不是新聞媒體（見本節開頭說明）。當天第一次
+    呼叫才會真的重抓＋分類（要花 AI 額度），之後同一天內讀本地檔案快取。
+
+    每個 IP 每分鐘最多 10 次：跟 /api/chat 一樣，這支呼叫會消耗 OpenAI/
+    Gemini 額度（雖然有日快取擋著，但 force=true 可以繞過），值得跟
+    /api/chat 一樣保守設定頻率限制。
+    """
+    _enforce_rate_limit(request, "material_news", max_requests=10, window_seconds=60)
+    try:
+        result = get_material_news(force=force)
+    except Exception as e:
+        logger.exception("查詢重大訊息發生未預期錯誤")
+        raise HTTPException(status_code=500, detail=f"查詢重大訊息時發生錯誤：{e}")
+    return _json_safe(result)
 
 
 class ChatRequest(BaseModel):

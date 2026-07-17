@@ -5,3 +5,13 @@ latest_scan_result.json
 latest_scan_result.tmp
 .DS_Store
 .backtest_data_cache/
+.survivorship_cache/
+.pit_market_cache/
+.pit_capital_cache/
+.pit_revenue_cache/
+.pit_institutional_cache/
+.pit_derived_dataset.pkl
+paper_trade_ledger.jsonl
+paper_trade_latest.json
+latest_material_news.json
+latest_material_news.tmp

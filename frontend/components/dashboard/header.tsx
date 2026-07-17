@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: '/', label: '儀表板' },
   { href: '/compare', label: '股票比較' },
   { href: '/backtest', label: '策略回測' },
+  { href: '/news', label: '重大訊息' },
   { href: '/watchlist', label: '自選股' },
   { href: '#', label: '設定' },
 ];

@@ -29,6 +29,47 @@ export async function fetchStockDirectory(): Promise<StockDirectoryEntry[]> {
   return body.stocks ?? [];
 }
 
+// ------------------------------------------------------------------
+// 重大訊息利多利空看板（/api/material-news）
+// ------------------------------------------------------------------
+
+export type NewsSentiment = '利多' | '利空' | '中性';
+
+export interface MaterialNewsItem {
+  market: '上市' | '上櫃';
+  stock_id: string;
+  stock_name: string;
+  subject: string;
+  detail: string;
+  announced_date: string;
+  announced_time: string;
+  sentiment: NewsSentiment;
+  importance: number;
+  reason: string;
+  classification_source: 'openai' | 'gemini' | 'fallback';
+}
+
+export interface MaterialNewsResponse {
+  cache_date: string;
+  generated_at: string | null;
+  data: MaterialNewsItem[];
+}
+
+/**
+ * 呼叫後端「重大訊息利多利空看板」API。資料源是 TWSE/TPEx 官方重大訊息
+ * 公告（上市櫃公司依法必須揭露的第一手事實），不是新聞媒體轉述，已用
+ * AI 分類利多／利空／重要程度。當天第一次呼叫才會真的重抓＋分類（要花
+ * AI 額度、需要一段時間），之後同一天內讀後端本地快取，秒回。
+ */
+export async function fetchMaterialNews(): Promise<MaterialNewsResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/material-news`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `查詢重大訊息失敗（HTTP ${res.status}）`);
+  }
+  return res.json();
+}
+
 export interface ScanResultItem {
   stock_id: string;
   stock_name: string;
