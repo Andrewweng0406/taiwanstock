@@ -384,3 +384,28 @@ export async function sendChatMessage(userMessage: string): Promise<ChatResponse
 
   return { reply: body?.reply ?? '（沒有收到回覆）', source: body?.source ?? 'fallback' };
 }
+
+// ------------------------------------------------------------------
+// 排程健康檢查（/api/health/scheduler）——內部用，不放進主導覽列
+// ------------------------------------------------------------------
+
+export interface SchedulerJobHealth {
+  job_id: string;
+  next_run_time: string | null;
+  last_run_at: string | null;
+  status: string;
+  detail: string;
+}
+
+/**
+ * 查三個背景排程（收盤後掃描、紙上交易記錄、重大訊息分類）最近一次
+ * 執行狀況。沒有帳號系統、沒有主動通知，純粹給自己偶爾進 /status 看一眼。
+ */
+export async function fetchSchedulerHealth(): Promise<SchedulerJobHealth[]> {
+  const res = await fetch(`${API_BASE_URL}/api/health/scheduler`);
+  if (!res.ok) {
+    throw new Error(`查詢排程狀態失敗（HTTP ${res.status}）`);
+  }
+  const body = await res.json();
+  return body.jobs ?? [];
+}

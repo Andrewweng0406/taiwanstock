@@ -601,11 +601,29 @@ def _save_scan_cache(scan_time: str, trading_date: str, results: list) -> None:
 # date.today() 算出來的 scan_date 也不會跨日出錯；但這個排程時間如果之後
 # 改到台灣時間凌晨 0-8 點，UTC 那邊會是前一天，屆時要另外處理時區換算，
 # 不能直接假設 date.today() 就是台灣的今天。
+# 三個排程各自最近一次執行結果，給 /api/health/scheduler 用。這幾個排程
+# 完全無人看管地每天自動跑，之前唯一能知道「有沒有正常執行」的方式是
+# 手動去翻 Railway log——這裡把結果記在記憶體裡，開一個健康檢查端點
+# 就能一眼看到。記憶體內快取（不寫檔案）：重開機會清空，這本來就只是
+# 「距離現在最近一次執行狀況」，重開機之後自然就是「還沒有紀錄」，這樣
+# 反而更誠實，不會顯示一個其實已經過時很久的舊快取。
+_scheduler_health: dict = {}
+
+
+def _record_job_result(job_id: str, success: bool, detail: str = "") -> None:
+    _scheduler_health[job_id] = {
+        "last_run_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "success" if success else "failed",
+        "detail": detail,
+    }
+
+
 def _scheduled_scan_job() -> None:
     """收盤後自動掃描一次；跟 API 路由共用同一把鎖，若當下有人正在手動掃描/回測就跳過，不搶鎖。"""
     acquired = heavy_task_lock.acquire(blocking=False)
     if not acquired:
         logger.info("[排程] 收盤後自動掃描時間到，但目前有掃描/回測正在執行，本次跳過")
+        _record_job_result("post_market_scan", success=True, detail="跳過（上一個掃描/回測尚未完成）")
         return
     try:
         logger.info("[排程] 開始收盤後自動掃描")
@@ -613,8 +631,10 @@ def _scheduled_scan_job() -> None:
         scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _save_scan_cache(scan_time, trading_date, results)
         logger.info(f"[排程] 收盤後自動掃描完成，交易日 {trading_date}，符合條件 {len(results)} 檔")
+        _record_job_result("post_market_scan", success=True, detail=f"交易日 {trading_date}，符合條件 {len(results)} 檔")
     except Exception as e:
         logger.exception(f"[排程] 收盤後自動掃描失敗：{e}")
+        _record_job_result("post_market_scan", success=False, detail=str(e))
     finally:
         heavy_task_lock.release()
 
@@ -648,8 +668,10 @@ def _scheduled_paper_trade_job() -> None:
         logger.info("[紙上交易] 開始記錄鎖定參數訊號")
         result = locked_strategy_paper_trade.run(from_cache=True)
         logger.info(f"[紙上交易] 記錄完成，新增 {result['new_records_appended']} 筆訊號")
+        _record_job_result("post_market_paper_trade", success=True, detail=f"新增 {result['new_records_appended']} 筆訊號")
     except Exception as e:
         logger.exception(f"[紙上交易] 記錄失敗：{e}")
+        _record_job_result("post_market_paper_trade", success=False, detail=str(e))
 
 
 def _scheduled_material_news_job() -> None:
@@ -658,8 +680,10 @@ def _scheduled_material_news_job() -> None:
         logger.info("[重大訊息] 開始排程抓取與分類")
         result = get_material_news(force=True)
         logger.info(f"[重大訊息] 排程完成，共 {len(result.get('data', []))} 則")
+        _record_job_result("post_market_material_news", success=True, detail=f"共 {len(result.get('data', []))} 則")
     except Exception as e:
         logger.exception(f"[重大訊息] 排程失敗：{e}")
+        _record_job_result("post_market_material_news", success=False, detail=str(e))
 
 
 _scan_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
@@ -1723,6 +1747,30 @@ def health_check():
             "openai" if os.getenv("OPENAI_API_KEY") else "gemini" if os.getenv("GEMINI_API_KEY") else "fallback（規則式，未設定 AI 金鑰）"
         ),
     }
+
+
+@app.get("/api/health/scheduler")
+def get_scheduler_health():
+    """
+    三個背景排程（收盤後自動掃描、紙上交易記錄、重大訊息分類）最近一次
+    執行狀況，沒有帳號系統、沒有主動通知，純粹給自己偶爾進來看一眼用的
+    健康檢查頁面。next_run_time 是排程器本身算出來的下一次預定執行時間，
+    可以用來判斷「是不是太久沒跑了」。伺服器重開機後，還沒執行過的排程
+    這裡會顯示「尚無紀錄」，不是錯誤，只是還沒到排程時間。
+    """
+    jobs = []
+    for job in _scan_scheduler.get_jobs():
+        health = _scheduler_health.get(job.id)
+        jobs.append(
+            {
+                "job_id": job.id,
+                "next_run_time": job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job.next_run_time else None,
+                "last_run_at": health["last_run_at"] if health else None,
+                "status": health["status"] if health else "尚無紀錄",
+                "detail": health["detail"] if health else "",
+            }
+        )
+    return {"jobs": jobs}
 
 
 # ======================================================================
